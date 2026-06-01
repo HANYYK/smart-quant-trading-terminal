@@ -8,6 +8,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import random
+import json
+import time
+import threading
+import hashlib
+from pathlib import Path
 
 from utils import cache, cached
 from utils.indicators import (
@@ -93,51 +98,166 @@ def fetch_kline_data(code: str, frequency: str = "d", count: int = 120) -> pd.Da
         close_baostock_connection(lg)
 
 
-def predict_trend_lstm(df: pd.DataFrame, future_days: int = 3) -> dict:
+def predict_trend_multi_indicator(df: pd.DataFrame, future_days: int = 3) -> dict:
     """
-    使用LSTM模型预测未来走势
+    多指标综合趋势预测
+    基于 EMA/MACD/RSI/布林带/KDJ/ATR 六项指标加权评分，
+    不使用任何外部模型，零额外依赖。
     """
     if len(df) < 30:
         return {
-            "predictions": [],
-            "confidence": 0,
-            "trend": "neutral",
+            "predictions": [], "confidence": 0, "trend": "neutral",
+            "last_price": 0, "signals": [],
             "message": "历史数据不足（需要至少30个交易日）"
         }
 
     try:
-        recent_data = df["close"].values[-60:].reshape(-1, 1)
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        last_price = float(last["close"])
+        atr = float(last.get("atr", last_price * 0.02) or last_price * 0.02)
+        volatility = atr / last_price  # 相对波动率
 
-        normalization_factor = np.max(recent_data)
-        normalized_data = recent_data / normalization_factor
+        signals = []
+        scores = {}
 
+        # ---- EMA 趋势 (权重 0.30) ----
+        ema12 = float(last.get("ema12", last_price) or last_price)
+        ema26 = float(last.get("ema26", last_price) or last_price)
+        prev_ema12 = float(prev.get("ema12", last_price) or last_price)
+        if ema12 > ema26:
+            slope = (ema12 - prev_ema12) / (prev_ema12 + 1e-9)
+            scores["ema"] = min(1.0, 0.5 + slope * 50)
+            signals.append({"name": "EMA趋势", "direction": "up",
+                           "detail": f"EMA12({ema12:.2f}) > EMA26({ema26:.2f})"})
+        else:
+            slope = (ema12 - prev_ema12) / (prev_ema12 + 1e-9)
+            scores["ema"] = max(-1.0, -0.5 + slope * 50)
+            signals.append({"name": "EMA趋势", "direction": "down",
+                           "detail": f"EMA12({ema12:.2f}) < EMA26({ema26:.2f})"})
+
+        # ---- MACD 信号 (权重 0.25) ----
+        macd = float(last.get("macd", 0) or 0)
+        macd_signal = float(last.get("macd_signal", 0) or 0)
+        macd_hist = float(last.get("macd_hist", 0) or 0)
+        prev_macd = float(prev.get("macd", 0) or 0)
+        prev_signal = float(prev.get("macd_signal", 0) or 0)
+
+        if prev_macd <= prev_signal and macd > macd_signal:
+            scores["macd"] = 1.0
+            signals.append({"name": "MACD", "direction": "up", "detail": "金叉"})
+        elif prev_macd >= prev_signal and macd < macd_signal:
+            scores["macd"] = -1.0
+            signals.append({"name": "MACD", "direction": "down", "detail": "死叉"})
+        elif macd_hist > 0:
+            scores["macd"] = 0.5 if macd_hist > prev.get("macd_hist", 0) else 0.2
+            signals.append({"name": "MACD", "direction": "up",
+                           "detail": f"柱状图正值 {macd_hist:.3f}"})
+        else:
+            scores["macd"] = -0.5 if macd_hist < prev.get("macd_hist", 0) else -0.2
+            signals.append({"name": "MACD", "direction": "down",
+                           "detail": f"柱状图负值 {macd_hist:.3f}"})
+
+        # ---- RSI 位置 (权重 0.20) ----
+        rsi = float(last.get("rsi", 50) or 50)
+        if rsi < 30:
+            scores["rsi"] = 0.8
+            signals.append({"name": "RSI", "direction": "up",
+                           "detail": f"超卖区域 RSI={rsi:.1f}"})
+        elif rsi > 70:
+            scores["rsi"] = -0.8
+            signals.append({"name": "RSI", "direction": "down",
+                           "detail": f"超买区域 RSI={rsi:.1f}"})
+        elif rsi > 50:
+            scores["rsi"] = 0.2
+            signals.append({"name": "RSI", "direction": "up",
+                           "detail": f"偏强 RSI={rsi:.1f}"})
+        else:
+            scores["rsi"] = -0.2
+            signals.append({"name": "RSI", "direction": "down",
+                           "detail": f"偏弱 RSI={rsi:.1f}"})
+
+        # ---- 布林带 (权重 0.15) ----
+        bb_upper = float(last.get("bb_upper", 0) or 0)
+        bb_lower = float(last.get("bb_lower", 0) or 0)
+        bb_width = float(last.get("bb_width", 0) or 0)
+        if bb_upper > 0 and bb_lower > 0:
+            position = (last_price - bb_lower) / (bb_upper - bb_lower + 1e-9)
+            if position < 0.2:
+                scores["bb"] = 0.7
+                signals.append({"name": "布林带", "direction": "up", "detail": "接近下轨"})
+            elif position > 0.8:
+                scores["bb"] = -0.7
+                signals.append({"name": "布林带", "direction": "down", "detail": "接近上轨"})
+            elif 0.4 <= position <= 0.6:
+                scores["bb"] = 0.0
+                signals.append({"name": "布林带", "direction": "neutral", "detail": "中轨运行"})
+            else:
+                scores["bb"] = (0.5 - position) * 0.5
+                signals.append({"name": "布林带", "direction": "neutral",
+                               "detail": f"轨内 {position:.0%} 位置"})
+        else:
+            scores["bb"] = 0
+
+        # ---- KDJ (权重 0.10) ----
+        k = float(last.get("kdj_k", 50) or 50)
+        d = float(last.get("kdj_d", 50) or 50)
+        prev_k = float(prev.get("kdj_k", 50) or 50)
+        prev_d = float(prev.get("kdj_d", 50) or 50)
+        if prev_k <= prev_d and k > d and k < 30:
+            scores["kdj"] = 0.8
+            signals.append({"name": "KDJ", "direction": "up",
+                           "detail": f"低位金叉 K={k:.1f}"})
+        elif prev_k >= prev_d and k < d and k > 70:
+            scores["kdj"] = -0.8
+            signals.append({"name": "KDJ", "direction": "down",
+                           "detail": f"高位死叉 K={k:.1f}"})
+        elif k > d:
+            scores["kdj"] = 0.3
+            signals.append({"name": "KDJ", "direction": "up", "detail": f"K({k:.1f})>D({d:.1f})"})
+        else:
+            scores["kdj"] = -0.3
+            signals.append({"name": "KDJ", "direction": "down",
+                           "detail": f"K({k:.1f})<D({d:.1f})"})
+
+        # ---- 综合评分 ----
+        weights = {"ema": 0.30, "macd": 0.25, "rsi": 0.20, "bb": 0.15, "kdj": 0.10}
+        composite = sum(scores.get(k, 0) * w for k, w in weights.items())
+
+        # 置信度 = 各指标绝对值加权和 → 指标越是同方向，置信度越高
+        raw_agreement = sum(abs(scores.get(k, 0)) * w for k, w in weights.items())
+        confidence = round(min(0.95, 0.40 + raw_agreement * 0.60), 2)
+
+        # 趋势判断
+        if composite > 0.15:
+            trend = "up"
+        elif composite < -0.15:
+            trend = "down"
+        else:
+            trend = "neutral"
+
+        # 预测价格 = 当前价 × (1 + 综合得分 × 波动率)
         predictions = []
-        last_sequence = normalized_data[-30:].reshape(1, 30, 1)
-
-        for _ in range(future_days):
-            prediction = np.mean(last_sequence) * 1.002
-            predictions.append(float(prediction * normalization_factor))
-            last_sequence = np.roll(last_sequence, -1, axis=1)
-            last_sequence[0, -1, 0] = prediction
-
-        last_price = float(df["close"].iloc[-1])
-        predicted_prices = predictions
-
-        trend = "up" if np.mean(predicted_prices) > last_price else "down"
+        pred_price = last_price
+        for i in range(1, future_days + 1):
+            daily_move = composite * volatility * (1 + i * 0.3)  # 逐日放大
+            pred_price = last_price * (1 + daily_move)
+            predictions.append(round(pred_price, 2))
 
         return {
-            "predictions": [round(p, 2) for p in predicted_prices],
-            "confidence": round(random.uniform(0.65, 0.85), 2),
+            "predictions": predictions,
+            "confidence": confidence,
             "trend": trend,
-            "last_price": last_price
+            "last_price": last_price,
+            "composite_score": round(composite, 3),
+            "signals": signals,
         }
 
     except Exception as e:
         return {
-            "predictions": [],
-            "confidence": 0,
-            "trend": "neutral",
-            "message": str(e)
+            "predictions": [], "confidence": 0, "trend": "neutral",
+            "last_price": float(df["close"].iloc[-1]) if len(df) > 0 else 0,
+            "signals": [], "message": str(e)
         }
 
 
@@ -447,7 +567,15 @@ def get_ai_prediction(stock_code: str):
                 "data": None
             }), 400
 
-        prediction = predict_trend_lstm(df, future_days=3)
+        # 计算技术指标供预测使用
+        df = calculate_ema(df)
+        df = calculate_macd(df)
+        df = calculate_rsi(df)
+        df = calculate_bollinger_bands(df)
+        df = calculate_kdj(df)
+        df = calculate_atr(df)
+
+        prediction = predict_trend_multi_indicator(df, future_days=3)
 
         return jsonify({"success": True, "data": prediction})
 
@@ -457,9 +585,60 @@ def get_ai_prediction(stock_code: str):
         return jsonify({"success": False, "error": "服务器内部错误，请稍后重试"}), 500
 
 
-# 模拟新闻池 —— 按情感分类，通过股票代码 hash 随机组合，每只股票结果不同
+# ---- 新闻缓存 ----
+_NEWS_CACHE_DIR = Path("cache/news")
+_NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_NEWS_CACHE_TTL = 600  # 10 分钟
+_news_cache_lock = threading.Lock()
+
+
+def _fetch_real_news(stock_code: str) -> list[str]:
+    """从东方财富获取真实个股新闻标题"""
+    # 提取纯数字代码，如 sh.600519 → 600519
+    raw_code = stock_code.split(".")[-1] if "." in stock_code else stock_code
+
+    # 读缓存
+    cache_file = _NEWS_CACHE_DIR / f"{raw_code}.json"
+    try:
+        if cache_file.exists():
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            if time.time() - data.get("ts", 0) < _NEWS_CACHE_TTL:
+                return data.get("titles", [])
+    except Exception:
+        pass
+
+    titles = []
+    try:
+        import akshare as ak
+        df = ak.stock_news_em(stock=raw_code)
+        if df is not None and not df.empty:
+            titles = df["title"].dropna().head(20).tolist()
+    except Exception:
+        pass  # 失败走降级
+
+    if not titles:
+        # 降级：用 mock 新闻池
+        h = int(hashlib.md5(stock_code.encode()).hexdigest()[:8], 16)
+        rng = random.Random(h)
+        pool = list(_MOCK_NEWS_POOL)
+        rng.shuffle(pool)
+        code_short = raw_code
+        titles = [tpl[0].replace("{code}", code_short) for tpl in pool[:7]]
+
+    # 写缓存
+    try:
+        cache_file.write_text(
+            json.dumps({"titles": titles, "ts": time.time()}, ensure_ascii=False),
+            encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+    return titles
+
+
+# 备用新闻池 —— akshare 失败时的降级方案
 _MOCK_NEWS_POOL = [
-    # 正面 (权重 3: 利好/增长/突破/合作)
     ("{code}发布季度财报，营收同比增长15%", "positive"),
     ("机构上调{code}目标价，维持买入评级", "positive"),
     ("{code}新产品获得市场认可，销量超预期", "positive"),
@@ -468,13 +647,11 @@ _MOCK_NEWS_POOL = [
     ("{code}获政策支持，行业景气度持续回暖", "positive"),
     ("{code}业绩超预期，净利润同比增长30%", "positive"),
     ("{code}技术突破，推出新一代产品", "positive"),
-    # 负面 (权重 2: 下跌/亏损/利空)
     ("{code}季度财报不及预期，净利润下滑", "negative"),
     ("行业竞争加剧，{code}市场份额面临挑战", "negative"),
     ("{code}遭遇大股东减持，市场信心受挫", "negative"),
     ("监管新规出台，{code}业务模式或受影响", "negative"),
     ("{code}估值偏高，分析师下调评级至中性", "negative"),
-    # 中性 (权重 2)
     ("{code}召开股东大会，审议年度报告", "neutral"),
     ("{code}发布公告，回应投资者关切事项", "neutral"),
     ("{code}维持现有业务格局，静待政策催化", "neutral"),
@@ -482,25 +659,18 @@ _MOCK_NEWS_POOL = [
 ]
 
 
-def _pick_mock_news(stock_code: str, count: int = 7) -> list[str]:
-    """根据股票代码 hash 从新闻池中选取固定组合，不同股票结果不同"""
-    import hashlib
-    h = int(hashlib.md5(stock_code.encode()).hexdigest()[:8], 16)
-    rng = random.Random(h)
-    pool = list(_MOCK_NEWS_POOL)  # copy
-    rng.shuffle(pool)
-    selected = pool[:count]
-    return [tpl[0].replace("{code}", stock_code.split(".")[-1]) for tpl in selected]
-
-
 @stock_bp.route("/api/ai/sentiment/<stock_code>")
 def get_sentiment_analysis(stock_code: str):
-    """获取情绪分析"""
-    mock_news = _pick_mock_news(stock_code)
-
-    sentiment = analyze_sentiment(mock_news)
-
-    return jsonify({"success": True, "data": sentiment})
+    """获取情绪分析 —— 真实新闻 + 关键词情感打分"""
+    try:
+        news_titles = _fetch_real_news(stock_code)
+        sentiment = analyze_sentiment(news_titles)
+        sentiment["news_titles"] = news_titles[:5]  # 返回前 5 条标题给前端展示
+        return jsonify({"success": True, "data": sentiment})
+    except Exception as e:
+        import logging
+        logging.exception("情绪分析API错误")
+        return jsonify({"success": False, "error": "暂时不可用"}), 500
 
 
 @stock_bp.route("/api/realtime/<stock_code>")
