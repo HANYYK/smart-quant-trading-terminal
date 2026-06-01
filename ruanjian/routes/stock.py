@@ -457,16 +457,46 @@ def get_ai_prediction(stock_code: str):
         return jsonify({"success": False, "error": "服务器内部错误，请稍后重试"}), 500
 
 
+# 模拟新闻池 —— 按情感分类，通过股票代码 hash 随机组合，每只股票结果不同
+_MOCK_NEWS_POOL = [
+    # 正面 (权重 3: 利好/增长/突破/合作)
+    ("{code}发布季度财报，营收同比增长15%", "positive"),
+    ("机构上调{code}目标价，维持买入评级", "positive"),
+    ("{code}新产品获得市场认可，销量超预期", "positive"),
+    ("多家机构看好{code}长期发展前景", "positive"),
+    ("{code}宣布战略合作计划，拓展新业务线", "positive"),
+    ("{code}获政策支持，行业景气度持续回暖", "positive"),
+    ("{code}业绩超预期，净利润同比增长30%", "positive"),
+    ("{code}技术突破，推出新一代产品", "positive"),
+    # 负面 (权重 2: 下跌/亏损/利空)
+    ("{code}季度财报不及预期，净利润下滑", "negative"),
+    ("行业竞争加剧，{code}市场份额面临挑战", "negative"),
+    ("{code}遭遇大股东减持，市场信心受挫", "negative"),
+    ("监管新规出台，{code}业务模式或受影响", "negative"),
+    ("{code}估值偏高，分析师下调评级至中性", "negative"),
+    # 中性 (权重 2)
+    ("{code}召开股东大会，审议年度报告", "neutral"),
+    ("{code}发布公告，回应投资者关切事项", "neutral"),
+    ("{code}维持现有业务格局，静待政策催化", "neutral"),
+    ("{code}参与行业论坛，探讨数字化转型方向", "neutral"),
+]
+
+
+def _pick_mock_news(stock_code: str, count: int = 7) -> list[str]:
+    """根据股票代码 hash 从新闻池中选取固定组合，不同股票结果不同"""
+    import hashlib
+    h = int(hashlib.md5(stock_code.encode()).hexdigest()[:8], 16)
+    rng = random.Random(h)
+    pool = list(_MOCK_NEWS_POOL)  # copy
+    rng.shuffle(pool)
+    selected = pool[:count]
+    return [tpl[0].replace("{code}", stock_code.split(".")[-1]) for tpl in selected]
+
+
 @stock_bp.route("/api/ai/sentiment/<stock_code>")
 def get_sentiment_analysis(stock_code: str):
     """获取情绪分析"""
-    mock_news = [
-        f"{stock_code}发布季度财报，营收同比增长15%",
-        f"机构上调{stock_code}目标价",
-        f"{stock_code}新产品获得市场认可",
-        "行业分析师看好该公司未来发展",
-        f"{stock_code}宣布战略合作计划"
-    ]
+    mock_news = _pick_mock_news(stock_code)
 
     sentiment = analyze_sentiment(mock_news)
 

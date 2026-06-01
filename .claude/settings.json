@@ -13,7 +13,8 @@
       "WebSearch",
       "WebFetch(domain:pypi.org)",
       "Bash(git commit -m 'fix: AI预测和情感分析真正可用（零额外依赖） *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git commit -m 'fix: 情绪分析新闻多样化，不再永远是88.9 *)"
     ]
   }
 }
