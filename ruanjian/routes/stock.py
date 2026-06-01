@@ -69,7 +69,7 @@ def fetch_kline_data(code: str, frequency: str = "d", count: int = 120) -> pd.Da
 
         if not data:
             print(f"[K线] {code} 无数据，尝试备用数据")
-            return _get_fallback_kline_data(code)
+            return _get_fallback_kline_data(code, count=count)
 
         df = pd.DataFrame(data, columns=[
             "date", "code", "open", "high", "low", "close",
@@ -85,14 +85,14 @@ def fetch_kline_data(code: str, frequency: str = "d", count: int = 120) -> pd.Da
 
         if df.empty or len(df) < count // 2:
             print(f"[K线] {code} 数据不足，补充备用数据")
-            fallback = _get_fallback_kline_data(code)
+            fallback = _get_fallback_kline_data(code, count=count)
             df = pd.concat([df, fallback], ignore_index=True).tail(count)
 
         return df.tail(count).reset_index(drop=True)
 
     except Exception as e:
         print(f"[K线] {code} 获取失败: {e}，使用备用数据")
-        return _get_fallback_kline_data(code)
+        return _get_fallback_kline_data(code, count=count)
 
     finally:
         close_baostock_connection(lg)
@@ -261,49 +261,77 @@ def predict_trend_multi_indicator(df: pd.DataFrame, future_days: int = 3) -> dic
         }
 
 
-def _get_fallback_kline_data(code: str) -> pd.DataFrame:
-    """获取备用K线数据（当baostock不可用时）"""
-    stock_info = {
-        "sh.600016": {"name": "民生银行", "base": 4.5},
-        "sz.000001": {"name": "平安银行", "base": 12.5},
-        "sh.600036": {"name": "招商银行", "base": 38.5},
-        "sz.000858": {"name": "五粮液", "base": 145},
-        "sh.600519": {"name": "贵州茅台", "base": 1680},
-        "sz.000333": {"name": "美的集团", "base": 58},
-        "sz.300750": {"name": "宁德时代", "base": 195},
-    }
+def _eastmoney_stock_secid(code: str) -> str:
+    """股票代码转东方财富 secid，sh.600519 → 1.600519"""
+    raw = code.split(".")[-1] if "." in code else code
+    return f"1.{raw}" if code.startswith("sh") or (not code.startswith("sz") and raw.startswith("6")) else f"0.{raw}"
 
-    info = stock_info.get(code, {"name": code.split(".")[-1], "base": 10.0})
-    base_price = info["base"]
-    name = info["name"]
 
-    dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(120, 0, -1)]
+def _get_fallback_kline_data(code: str, count: int = 120) -> pd.DataFrame:
+    """东方财富 K 线数据 —— baostock 不可用时的可靠后备（覆盖全部 A 股）"""
+    import requests
+    try:
+        secid = _eastmoney_stock_secid(code)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=count * 2)
+        url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+        params = {
+            "secid": secid,
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57",
+            "klt": "101",
+            "fqt": "1",
+            "beg": start_date.strftime("%Y%m%d"),
+            "end": end_date.strftime("%Y%m%d"),
+        }
+        resp = requests.get(url, params=params,
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.eastmoney.com/"},
+            timeout=10)
+        data = resp.json()
+        klines = (data.get("data") or {}).get("klines") or []
+        if klines:
+            records = []
+            for line in klines:
+                parts = str(line).split(",")
+                if len(parts) < 7:
+                    continue
+                records.append({
+                    "date": parts[0],
+                    "code": code,
+                    "open": float(parts[1]),
+                    "close": float(parts[2]),
+                    "high": float(parts[3]),
+                    "low": float(parts[4]),
+                    "volume": float(parts[5]),
+                    "amount": float(parts[6]),
+                    "pctChg": 0,
+                    "turn": 0,
+                })
+            if records:
+                # 补算涨跌幅
+                for i in range(1, len(records)):
+                    prev = records[i - 1]["close"]
+                    cur = records[i]["close"]
+                    records[i]["pctChg"] = round((cur - prev) / prev * 100, 2) if prev > 0 else 0
+                df = pd.DataFrame(records)
+                df = df.tail(count).reset_index(drop=True)
+                return df
+    except Exception as e:
+        print(f"[K线] 东方财富备用也失败: {e}")
 
-    data = []
+    # 最终保底：随机数据（保证页面不崩）
+    base_price = 10.0
+    dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(count, 0, -1)]
+    recs = []
     price = base_price
-    for i, date in enumerate(dates):
-        change_pct = random.uniform(-3, 3)
-        price = price * (1 + change_pct / 100)
-        high = price * (1 + random.uniform(0, 2) / 100)
-        low = price * (1 - random.uniform(0, 2) / 100)
-        open_p = price * (1 + random.uniform(-1, 1) / 100)
-        volume = random.randint(5000000, 50000000)
-
-        data.append({
-            "date": date,
-            "code": code,
-            "open": round(open_p, 2),
-            "high": round(high, 2),
-            "low": round(low, 2),
-            "close": round(price, 2),
-            "volume": volume,
-            "amount": volume * price,
-            "turn": round(random.uniform(0.5, 5), 2),
-            "pctChg": round(change_pct, 2),
-        })
-
-    df = pd.DataFrame(data)
-    return df
+    for d in dates:
+        chg = random.uniform(-3, 3)
+        price *= (1 + chg / 100)
+        recs.append({"date": d, "code": code, "open": round(price, 2), "close": round(price, 2),
+                      "high": round(price * 1.02, 2), "low": round(price * 0.98, 2),
+                      "volume": random.randint(5000000, 50000000), "amount": 0,
+                      "pctChg": round(chg, 2), "turn": 0})
+    return pd.DataFrame(recs)
 
 
 # 中文金融情感关键词

@@ -15,7 +15,9 @@
       "Bash(git commit -m 'fix: AI预测和情感分析真正可用（零额外依赖） *)",
       "Bash(git push *)",
       "Bash(git commit -m 'fix: 情绪分析新闻多样化，不再永远是88.9 *)",
-      "Bash(git commit -m 'fix: 去掉单字关键词，消除情感分析重复匹配 *)"
+      "Bash(git commit -m 'fix: 去掉单字关键词，消除情感分析重复匹配 *)",
+      "Bash(git commit -m 'feat: 真实新闻情感 + 多指标综合趋势预测（零额外依赖） *)",
+      "Bash(git commit -m 'fix: 替换后备K线数据源为东方财富API，覆盖全部A股 *)"
     ]
   }
 }
