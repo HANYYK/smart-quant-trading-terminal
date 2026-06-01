@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}交易记录 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Trade History</p>
+            <h1 class="page-title mb-1">交易记录</h1>
+            <p class="text-muted mb-0">查看所有历史交易明细。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('trade.index') }}">
+                <i class="fas fa-exchange-alt me-2"></i>去交易
+            </a>
+        </div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="card terminal-card mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">股票代码</label>
+                    <input type="text" class="form-control" id="filter-code" placeholder="如: sh.600519">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">交易方向</label>
+                    <select class="form-select" id="filter-action">
+                        <option value="">全部</option>
+                        <option value="buy">买入</option>
+                        <option value="sell">卖出</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">时间范围</label>
+                    <select class="form-select" id="filter-time">
+                        <option value="all">全部</option>
+                        <option value="7">最近7天</option>
+                        <option value="30">最近30天</option>
+                        <option value="90">最近90天</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-primary w-100" id="filter-btn">
+                        <i class="fas fa-filter me-2"></i>筛选
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-2">
+            <div class="metric-card metric-flat">
+                <span>总交易</span>
+                <strong id="stat-total">--</strong>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="metric-card metric-up">
+                <span>买入</span>
+                <strong id="stat-buy">--</strong>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="metric-card metric-down">
+                <span>卖出</span>
+                <strong id="stat-sell">--</strong>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="metric-card metric-up">
+                <span>手续费合计</span>
+                <strong id="stat-commission">--</strong>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="metric-card metric-up">
+                <span>盈利次数</span>
+                <strong id="stat-win">--</strong>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="metric-card metric-flat">
+                <span>胜率</span>
+                <strong id="stat-winrate">--</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易列表 -->
+    <div class="card terminal-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list-alt me-2 text-info"></i>交易明细</h5>
+            <span class="badge bg-primary" id="total-count">0 条记录</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>股票代码</th>
+                            <th>股票名称</th>
+                            <th>方向</th>
+                            <th>数量</th>
+                            <th>价格</th>
+                            <th>金额</th>
+                            <th>手续费</th>
+                            <th>收益</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trade-tbody">
+                        <tr><td colspan="9" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分页 -->
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center" id="pagination">
+        </ul>
+    </nav>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+
+    var currentPage = 1;
+    var pageSize = 20;
+
+    function formatMoney(num) {
+        return (num || 0).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function loadTrades(page) {
+        currentPage = page || 1;
+        var code = $("#filter-code").val().trim();
+        var action = $("#filter-action").val();
+
+        var url = "/trade/api/trade/list?page=" + currentPage + "&page_size=" + pageSize;
+        if (code) url += "&stock_code=" + encodeURIComponent(code);
+
+        $.get(url, function(res) {
+            var tbody = $("#trade-tbody");
+            if (res.success && res.data.length > 0) {
+                tbody.empty();
+                res.data.forEach(function(t) {
+                    var actionCls = t.action === "buy" ? "text-danger" : "text-success";
+                    var actionText = t.action === "buy" ? "买入" : "卖出";
+                    var profitHtml = t.profit !== null
+                        ? (t.profit >= 0
+                            ? '<span class="text-danger">+' + formatMoney(t.profit) + '</span>'
+                            : '<span class="text-success">' + formatMoney(t.profit) + '</span>')
+                        : "-";
+
+                    tbody.append('<tr>' +
+                        '<td>' + t.created_at + '</td>' +
+                        '<td><a href="/stock/detail/' + t.stock_code + '" class="text-info">' + t.stock_code + '</a></td>' +
+                        '<td>' + t.stock_name + '</td>' +
+                        '<td class="' + actionCls + ' fw-bold">' + actionText + '</td>' +
+                        '<td>' + t.quantity + '</td>' +
+                        '<td>' + t.price + '</td>' +
+                        '<td>' + formatMoney(t.total_amount) + '</td>' +
+                        '<td>' + formatMoney(t.commission) + '</td>' +
+                        '<td>' + profitHtml + '</td></tr>');
+                });
+                $("#total-count").text(res.total + " 条记录");
+                renderPagination(res.pages, res.page);
+            } else {
+                tbody.html('<tr><td colspan="9" class="text-center text-muted">暂无交易记录</td></tr>');
+                $("#total-count").text("0 条记录");
+                $("#pagination").empty();
+            }
+        });
+
+        // 加载统计
+        $.get("/trade/api/summary", function(res) {
+            if (res.success) {
+                var d = res.data;
+                $("#stat-total").text(d.total_trades);
+                $("#stat-buy").text(d.buy_count);
+                $("#stat-sell").text(d.sell_count);
+                $("#stat-commission").text(formatMoney(d.total_commission) + " 元");
+                $("#stat-win").text(d.win_count);
+                $("#stat-winrate").text(d.win_rate.toFixed(1) + "%");
+            }
+        });
+    }
+
+    function renderPagination(totalPages, current) {
+        var pagination = $("#pagination");
+        pagination.empty();
+
+        if (totalPages <= 1) return;
+
+        var start = Math.max(1, current - 2);
+        var end = Math.min(totalPages, current + 2);
+
+        if (current > 1) {
+            pagination.append('<li class="page-item"><a class="page-link" href="#" data-page="' + (current - 1) + '">上一页</a></li>');
+        }
+        if (start > 1) {
+            pagination.append('<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>');
+            if (start > 2) pagination.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
+        }
+        for (var i = start; i <= end; i++) {
+            pagination.append('<li class="page-item ' + (i === current ? 'active' : '') + '"><a class="page-link" href="#" data-page="' + i + '">' + i + '</a></li>');
+        }
+        if (end < totalPages) {
+            if (end < totalPages - 1) pagination.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
+            pagination.append('<li class="page-item"><a class="page-link" href="#" data-page="' + totalPages + '">' + totalPages + '</a></li>');
+        }
+        if (current < totalPages) {
+            pagination.append('<li class="page-item"><a class="page-link" href="#" data-page="' + (current + 1) + '">下一页</a></li>');
+        }
+    }
+
+    $("#filter-btn").click(function() { loadTrades(1); });
+    $("#pagination").on("click", ".page-link", function(e) {
+        e.preventDefault();
+        var page = parseInt($(this).data("page"));
+        if (page) loadTrades(page);
+    });
+
+    loadTrades(1);
+})();
+</script>
+{% endblock %}

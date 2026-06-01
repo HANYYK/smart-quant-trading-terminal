@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}股票对比 - 智能量化交易终端{% endblock %}
+
+{% block extra_css %}
+<style>
+.compare-card {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s;
+}
+.compare-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+.stock-color-0 { color: #ef5350; }
+.stock-color-1 { color: #2196f3; }
+.stock-color-2 { color: #ff9800; }
+.stock-color-3 { color: #9c27b0; }
+.stock-color-4 { color: #4caf50; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('dashboard.index') }}">行情中心</a></li>
+            <li class="breadcrumb-item active">股票对比</li>
+        </ol>
+    </nav>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="text-light mb-3">
+                <i class="fas fa-balance-scale text-info me-2"></i>股票对比
+            </h2>
+            <p class="text-muted">最多支持5只股票同时对比分析，支持代码搜索</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label text-light">输入股票代码</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="compare-input"
+                                   placeholder="输入股票代码，多个用逗号分隔（如：sh.600016,sz.000001,sh.600036）">
+                            <button class="btn btn-danger" type="button" id="compare-btn">
+                                <i class="fas fa-chart-bar me-1"></i>对比
+                            </button>
+                        </div>
+                        <small class="text-muted mt-2 d-block">支持格式: sh.600016 或 600016</small>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="text-muted small">快速选择:</span>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="addStock('sh.600036')">招商银行</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="addStock('sz.000858')">五粮液</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="addStock('sh.600519')">贵州茅台</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="addStock('sz.000333')">美的集团</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="addStock('sz.300750')">宁德时代</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="compare-results"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script>
+(function() {
+    "use strict";
+
+    var compareChart = null;
+    var normalizeChart = null;
+    var currentData = [];
+
+    function $(id) { return document.getElementById(id); }
+
+    function addStock(code) {
+        var input = $('compare-input');
+        var current = input.value.trim();
+        if (current) {
+            input.value = current + ',' + code;
+        } else {
+            input.value = code;
+        }
+    }
+
+    function normalizeCode(code) {
+        code = code.trim();
+        if (!code) return null;
+        if (!code.startsWith('sh.') && !code.startsWith('sz.') && !code.startsWith('bj.')) {
+            if (code.match(/^\d{6}$/)) {
+                code = code.startsWith('6') ? 'sh.' + code : 'sz.' + code;
+            } else {
+                code = 'sh.' + code;
+            }
+        }
+        return code;
+    }
+
+    function compareStocks() {
+        var input = $('compare-input').value.trim();
+        if (!input) {
+            alert('请输入股票代码');
+            return;
+        }
+
+        var codes = input.split(',').map(normalizeCode).filter(function(c) { return c; });
+        if (codes.length < 2) {
+            alert('至少需要输入2个股票代码');
+            return;
+        }
+        if (codes.length > 5) {
+            alert('最多支持5只股票对比');
+            return;
+        }
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/stock/api/compare?codes=' + codes.join('&codes='), true);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    try {
+                        var response = JSON.parse(xhr.responseText);
+                        if (response.success && response.data.length > 0) {
+                            currentData = response.data;
+                            renderCompareResults(response.data);
+                        } else {
+                            $('compare-results').innerHTML = '<div class="alert alert-warning">未找到匹配的股票数据</div>';
+                        }
+                    } catch (e) {
+                        $('compare-results').innerHTML = '<div class="alert alert-danger">加载失败: ' + e.message + '</div>';
+                    }
+                } else {
+                    $('compare-results').innerHTML = '<div class="alert alert-danger">请求失败: ' + xhr.status + '</div>';
+                }
+            }
+        };
+        xhr.send();
+    }
+
+    function formatVolume(vol) {
+        return AppUtils.formatVolume(vol);
+    }
+
+    function renderCompareResults(data) {
+        var colors = ['#ef5350', '#2196f3', '#ff9800', '#9c27b0', '#4caf50'];
+
+        var html = '<div class="row mb-4"><div class="col-12"><div class="compare-card"><div class="card-header"><h5 class="mb-0"><i class="fas fa-table me-2"></i>对比数据</h5></div>';
+        html += '<div class="card-body p-0"><div class="table-responsive"><table class="table table-dark table-sm mb-0"><thead><tr><th>股票代码</th><th>最新价</th><th>涨跌额</th><th>涨跌幅</th><th>成交量</th><th>30日最高</th><th>30日最低</th><th>30日均量</th></tr></thead><tbody>';
+
+        data.forEach(function(item, idx) {
+            var changeClass = item.change_percent > 0 ? 'text-danger' : item.change_percent < 0 ? 'text-success' : 'text-muted';
+            var arrow = item.change_percent > 0 ? '▲' : item.change_percent < 0 ? '▼' : '■';
+
+            html += '<tr>' +
+                '<td><span class="fw-bold" style="color:' + colors[idx % colors.length] + '">' + item.code + '</span></td>' +
+                '<td class="fw-bold">' + item.close.toFixed(2) + '</td>' +
+                '<td class="' + changeClass + '">' + (item.change >= 0 ? '+' : '') + item.change.toFixed(2) + '</td>' +
+                '<td class="' + changeClass + '">' + arrow + ' ' + Math.abs(item.change_percent).toFixed(2) + '%</td>' +
+                '<td>' + formatVolume(item.volume) + '</td>' +
+                '<td class="text-danger">' + item.high_30d.toFixed(2) + '</td>' +
+                '<td class="text-success">' + item.low_30d.toFixed(2) + '</td>' +
+                '<td>' + formatVolume(item.avg_volume) + '</td>' +
+                '</tr>';
+        });
+
+        html += '</tbody></table></div></div></div></div>';
+
+        html += '<div class="row mb-4"><div class="col-md-6"><div class="compare-card"><div class="card-header"><h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>价格分布</h5></div>';
+        html += '<div class="card-body"><div id="compare-chart" style="height: 350px;"></div></div></div>';
+        html += '<div class="col-md-6"><div class="compare-card"><div class="card-header"><h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>涨跌幅对比</h5></div>';
+        html += '<div class="card-body"><div id="normalize-chart" style="height: 350px;"></div></div></div></div>';
+
+        $('compare-results').innerHTML = html;
+
+        renderCompareChart(data, colors);
+        renderNormalizeChart(data, colors);
+    }
+
+    function renderCompareChart(data, colors) {
+        if (compareChart) {
+            compareChart.dispose();
+        }
+        compareChart = echarts.init($('compare-chart'));
+
+        var option = {
+            tooltip: {
+                trigger: 'item',
+                formatter: function(params) {
+                    return params.name + '<br/>' +
+                           '价格: ' + params.value[1].toFixed(2) + '<br/>' +
+                           '成交量: ' + formatVolume(params.value[0] * 10000);
+                }
+            },
+            grid: { left: '10%', right: '10%', bottom: '15%', top: '10%' },
+            xAxis: {
+                name: '成交量(万)',
+                type: 'value',
+                axisLine: { lineStyle: { color: '#444' } },
+                axisLabel: { color: '#888' }
+            },
+            yAxis: {
+                name: '价格',
+                type: 'value',
+                scale: true,
+                axisLine: { lineStyle: { color: '#444' } },
+                axisLabel: { color: '#888' }
+            },
+            series: data.map(function(item, index) {
+                return {
+                    name: item.code,
+                    type: 'scatter',
+                    symbolSize: 20,
+                    data: [[item.avg_volume / 10000, item.close]],
+                    itemStyle: { color: colors[index % colors.length] },
+                    label: {
+                        show: true,
+                        position: 'right',
+                        formatter: item.code,
+                        color: colors[index % colors.length]
+                    }
+                };
+            })
+        };
+
+        compareChart.setOption(option);
+    }
+
+    function renderNormalizeChart(data, colors) {
+        if (normalizeChart) {
+            normalizeChart.dispose();
+        }
+        normalizeChart = echarts.init($('normalize-chart'));
+
+        var sorted = data.slice().sort(function(a, b) { return b.change_percent - a.change_percent; });
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    var item = params[0];
+                    return item.name + '<br/>' +
+                           '涨跌幅: <span style="color:' + item.color + '">' + item.value.toFixed(2) + '%</span>';
+                }
+            },
+            grid: { left: '5%', right: '15%', bottom: '10%', top: '10%' },
+            xAxis: {
+                type: 'value',
+                axisLine: { lineStyle: { color: '#444' } },
+                axisLabel: { color: '#888', formatter: '{value}%' },
+                markLine: {
+                    data: [{ xAxis: 0 }],
+                    lineStyle: { color: '#666', type: 'solid' }
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: sorted.map(function(item) { return item.code; }),
+                axisLine: { lineStyle: { color: '#444' } },
+                axisLabel: { color: '#888' }
+            },
+            series: [{
+                type: 'bar',
+                data: sorted.map(function(item, idx) {
+                    return {
+                        value: item.change_percent,
+                        itemStyle: {
+                            color: item.change_percent >= 0 ? colors[idx % colors.length] : '#26a69a'
+                        }
+                    };
+                }),
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: function(params) {
+                        return params.value.toFixed(2) + '%';
+                    },
+                    color: '#888'
+                }
+            }]
+        };
+
+        normalizeChart.setOption(option);
+    }
+
+    $('compare-btn').addEventListener('click', compareStocks);
+    $('compare-input').addEventListener('keyup', function(e) {
+        if (e.key === 'Enter') compareStocks();
+    });
+
+    window.addEventListener('resize', function() {
+        if (compareChart) compareChart.resize();
+        if (normalizeChart) normalizeChart.resize();
+    });
+})();
+</script>
+{% endblock %}

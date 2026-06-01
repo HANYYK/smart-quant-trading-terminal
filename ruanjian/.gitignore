@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Flask
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# 环境变量
+.env
+.env.local
+
+# 缓存
+cache/
+*.cache
+
+# 日志
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 静态资源（开发时忽略编译产物）
+static/dist/
+static/css/*.min.css
+static/js/*.min.js
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# TensorFlow 模型（如果有）
+models/*.h5
+models/*.pb

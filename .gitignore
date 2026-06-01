@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+venv_old/
+ENV/
+.venv
+
+# Flask
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# 环境变量（.env.example 是模板，需要提交）
+.env
+.env.local
+
+# 缓存
+cache/
+*.cache
+
+# 日志
+logs/
+*.log
+
+# IDE
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+
+# 静态编译产物
+static/dist/
+static/css/*.min.css
+static/js/*.min.js
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# TensorFlow 模型
+models/*.h5
+models/*.pb
+
+# OS
+.DS_Store
+Thumbs.db

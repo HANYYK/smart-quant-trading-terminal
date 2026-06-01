@@ -1,0 +1,621 @@
+{% extends "base.html" %}
+
+{% block title %}基金搜索 - 智能量化交易终端{% endblock %}
+
+{% block extra_css %}
+<style>
+.search-container {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 24px;
+}
+.fund-card {
+    background: rgba(28, 34, 43, 0.6);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px;
+    transition: all 0.3s;
+    margin-bottom: 12px;
+}
+.fund-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    border-color: rgba(255,255,255,0.2);
+}
+.fund-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 4px;
+}
+.fund-code {
+    font-size: 0.85rem;
+    color: #888;
+}
+.fund-type-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+.type-stock { background: rgba(239,83,80,0.2); color: #ef5350; }
+.type-mix { background: rgba(79,172,254,0.2); color: #4facfe; }
+.type-index { background: rgba(76,175,80,0.2); color: #4caf50; }
+.type-bond { background: rgba(156,39,176,0.2); color: #9c27b0; }
+.type-money { background: rgba(255,193,7,0.2); color: #ffc107; }
+.type-qdii { background: rgba(0,188,212,0.2); color: #00bcd4; }
+
+.risk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+}
+.risk-low { background: rgba(76,175,80,0.2); color: #4caf50; }
+.risk-mid { background: rgba(255,193,7,0.2); color: #ffc107; }
+.risk-midhigh { background: rgba(255,152,0,0.2); color: #ff9800; }
+.risk-high { background: rgba(239,83,80,0.2); color: #ef5350; }
+.risk-extreme { background: rgba(244,67,54,0.2); color: #f44336; }
+
+.star-btn {
+    background: transparent;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 1.2rem;
+    transition: all 0.2s;
+    padding: 4px 8px;
+}
+.star-btn:hover { color: #ffc107; transform: scale(1.1); }
+.star-btn.starred { color: #ffc107; }
+
+.quick-filter {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 4px;
+    font-size: 0.85rem;
+}
+.quick-filter:hover, .quick-filter.active {
+    background: rgba(239,83,80,0.2);
+    border-color: #ef5350;
+    color: #ef5350;
+}
+
+.autocomplete-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #1f2937;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+}
+.autocomplete-dropdown.show {
+    display: block;
+}
+.autocomplete-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    transition: background 0.2s;
+}
+.autocomplete-item:hover {
+    background: rgba(255,255,255,0.05);
+}
+.autocomplete-item:last-child {
+    border-bottom: none;
+}
+.search-input-wrapper {
+    position: relative;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('dashboard.index') }}">首页</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('fund.search') }}">基金</a></li>
+            <li class="breadcrumb-item active">基金搜索</li>
+        </ol>
+    </nav>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="text-light mb-1">
+                <i class="fas fa-search text-info me-2"></i>基金搜索
+            </h2>
+            <p class="text-muted">输入基金代码、名称或基金经理名称进行搜索</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-lg-8 offset-lg-2">
+            <div class="search-container">
+                <div class="search-input-wrapper mb-3">
+                    <input type="text" class="form-control form-control-lg" id="fund-search-input"
+                           placeholder="输入基金代码、名称或基金经理..." autocomplete="off">
+                    <div class="autocomplete-dropdown" id="autocomplete-dropdown"></div>
+                </div>
+
+                <div class="mb-3">
+                    <span class="text-muted small me-2">快速筛选:</span>
+                    <button class="quick-filter active" data-type="all">全部</button>
+                    <button class="quick-filter" data-type="stock">股票型</button>
+                    <button class="quick-filter" data-type="mix">混合型</button>
+                    <button class="quick-filter" data-type="index">指数型</button>
+                    <button class="quick-filter" data-type="bond">债券型</button>
+                    <button class="quick-filter" data-type="money">货币型</button>
+                    <button class="quick-filter" data-type="qdii">QDII</button>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-danger flex-grow-1" id="search-btn">
+                        <i class="fas fa-search me-2"></i>搜索
+                    </button>
+                    <button class="btn btn-outline-light" id="reset-btn">
+                        <i class="fas fa-redo me-2"></i>重置
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <div class="fund-card text-center">
+                <div class="text-muted small">基金总数</div>
+                <div class="fs-3 fw-bold text-info" id="total-count">-</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="fund-card text-center">
+                <div class="text-muted small">搜索结果</div>
+                <div class="fs-3 fw-bold text-success" id="result-count">-</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="fund-card text-center">
+                <div class="text-muted small">关注基金</div>
+                <div class="fs-3 fw-bold text-warning" id="starred-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="fund-card text-center">
+                <a href="{{ url_for('fund.compare') }}" class="text-decoration-none">
+                    <div class="text-muted small">对比列表</div>
+                    <div class="fs-3 fw-bold text-primary" id="compare-count">0</div>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row" id="results-container">
+        <div class="col-12">
+            <div class="fund-card">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-info mb-3"></div>
+                    <p class="text-muted">输入关键词搜索基金...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4" id="pagination-container" style="display:none;">
+        <div class="col-12 d-flex justify-content-center">
+            <nav>
+                <ul class="pagination" id="pagination"></ul>
+            </nav>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+
+    var currentFilter = "all";
+    var currentKeyword = "";
+    var starredFunds = JSON.parse(localStorage.getItem("starredFunds") || "[]");
+    var compareFunds = JSON.parse(sessionStorage.getItem("compareFunds") || "[]");
+    var currentPage = 1;
+    var pageSize = 10;
+    var currentXHR = null; // 用于中止未完成的请求
+
+    var $ = function(id) { return document.getElementById(id); };
+    var $$ = function(sel) { return document.querySelectorAll(sel); };
+
+    function init() {
+        updateCounts();
+        bindEvents();
+        // 初始化时显示搜索提示而非加载动画
+        resetSearch();
+    }
+
+    function bindEvents() {
+        $("search-btn").addEventListener("click", doSearch);
+        $("reset-btn").addEventListener("click", resetSearch);
+
+        var searchInput = $("fund-search-input");
+        searchInput.addEventListener("input", debounce(handleInput, 300));
+        searchInput.addEventListener("keyup", function(e) {
+            if (e.key === "Enter") doSearch();
+        });
+
+        searchInput.addEventListener("focus", function() {
+            if (this.value.length >= 1) showAutocomplete(this.value);
+        });
+
+        document.addEventListener("click", function(e) {
+            if (!e.target.closest(".search-input-wrapper")) {
+                hideAutocomplete();
+            }
+        });
+
+        $$(".quick-filter").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+                $$(".quick-filter").forEach(function(b) { b.classList.remove("active"); });
+                this.classList.add("active");
+                currentFilter = this.getAttribute("data-type");
+                doSearch();
+            });
+        });
+    }
+
+    function debounce(func, wait) {
+        var timeout;
+        return function() {
+            clearTimeout(timeout);
+            timeout = setTimeout(func, wait);
+        };
+    }
+
+    function loadAllFunds() {
+        // 不加载全部基金，只在用户输入时显示自动补全
+        $("total-count").textContent = "-";
+    }
+
+    function handleInput() {
+        var value = this.value.trim();
+        if (value.length >= 2) {
+            // 用户输入时实时搜索用于自动补全
+            fetchAutocomplete(value);
+        } else {
+            hideAutocomplete();
+        }
+    }
+
+    function fetchAutocomplete(keyword) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/fund/api/search?keyword=" + encodeURIComponent(keyword) + "&page_size=10", true);
+        xhr.timeout = 5000;  // 5秒超时
+        xhr.ontimeout = function() {
+            hideAutocomplete();
+        };
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                try {
+                    var resp = JSON.parse(xhr.responseText);
+                    if (resp.success && resp.data.length > 0) {
+                        showAutocompleteResults(resp.data);
+                    } else {
+                        showAutocompleteResults([]);
+                    }
+                } catch (e) {
+                    showAutocompleteResults([]);
+                }
+            }
+        };
+        xhr.send();
+    }
+
+    function showAutocompleteResults(funds) {
+        var dropdown = $("autocomplete-dropdown");
+        if (funds.length === 0) {
+            dropdown.innerHTML = '<div class="autocomplete-item text-muted">未找到匹配结果</div>';
+        } else {
+            dropdown.innerHTML = funds.map(function(f) {
+                var typeClass = "type-" + getTypeKey(f.fund_type);
+                return '<div class="autocomplete-item" data-code="' + f.fund_code + '">' +
+                    '<div class="fw-bold text-light">' + f.fund_name + '</div>' +
+                    '<div class="small text-muted">' + f.fund_code + ' | <span class="' + typeClass + '">' + f.fund_type + '</span></div>' +
+                    '</div>';
+            }).join("");
+        }
+
+        dropdown.classList.add("show");
+
+        $$(".autocomplete-item[data-code]").forEach(function(item) {
+            item.addEventListener("click", function() {
+                var code = this.getAttribute("data-code");
+                window.location.href = "/fund/analysis/" + code;
+            });
+        });
+    }
+
+    function hideAutocomplete() {
+        $("autocomplete-dropdown").classList.remove("show");
+    }
+
+    function doSearch() {
+        currentKeyword = $("fund-search-input").value.trim();
+        currentPage = 1;
+        fetchResults();
+    }
+
+    function resetSearch() {
+        $("fund-search-input").value = "";
+        currentKeyword = "";
+        currentFilter = "all";
+        currentPage = 1;
+        $$(".quick-filter").forEach(function(b) {
+            b.classList.toggle("active", b.getAttribute("data-type") === "all");
+        });
+        fetchResults();
+    }
+
+    function fetchResults() {
+        var container = $("results-container");
+
+        // 如果关键词为空，显示初始提示
+        if (!currentKeyword.trim()) {
+            container.innerHTML = '<div class="col-12"><div class="fund-card text-center py-5"><i class="fas fa-search fa-3x text-muted mb-3"></i><p class="text-muted">请输入基金代码或名称进行搜索</p></div></div>';
+            $("result-count").textContent = "0";
+            $("pagination-container").style.display = "none";
+            return;
+        }
+
+        container.innerHTML = '<div class="col-12"><div class="fund-card"><div class="text-center py-5"><div class="spinner-border text-info mb-3"></div><p class="text-muted">搜索中...</p></div></div></div>';
+
+        // 中止旧请求
+        if (currentXHR) {
+            currentXHR.abort();
+        }
+
+        var url = "/fund/api/search?keyword=" + encodeURIComponent(currentKeyword) +
+                  "&type=" + currentFilter +
+                  "&page=" + currentPage +
+                  "&page_size=" + pageSize;
+
+        currentXHR = new XMLHttpRequest();
+        currentXHR.open("GET", url, true);
+
+        // 10秒超时
+        currentXHR.timeout = 10000;
+        currentXHR.ontimeout = function() {
+            container.innerHTML = '<div class="col-12"><div class="fund-card text-center py-5"><i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i><p class="text-muted">请求超时，请重试</p><button class="btn btn-sm btn-outline-light" onclick="doSearch()">重新加载</button></div></div>';
+        };
+
+        currentXHR.onreadystatechange = function() {
+            if (currentXHR.readyState === 4) {
+                if (currentXHR.status === 200) {
+                    try {
+                        var resp = JSON.parse(currentXHR.responseText);
+                        if (resp.success) {
+                            renderResults(resp.data);
+                            $("result-count").textContent = resp.total;
+                            renderPagination(resp.total_pages, resp.page);
+                        } else {
+                            container.innerHTML = '<div class="col-12"><div class="alert alert-warning">搜索服务暂不可用</div></div>';
+                        }
+                    } catch (e) {
+                        container.innerHTML = '<div class="col-12"><div class="alert alert-danger">加载失败</div></div>';
+                    }
+                } else {
+                    container.innerHTML = '<div class="col-12"><div class="alert alert-danger">加载失败 (错误码: ' + currentXHR.status + ')</div></div>';
+                }
+            }
+        };
+        currentXHR.send();
+    }
+
+    function getTypeKey(type) {
+        var map = { "股票型": "stock", "混合型": "mix", "指数型": "index", "债券型": "bond", "货币型": "money", "QDII": "qdii" };
+        return map[type] || "mix";
+    }
+
+    function getRiskClass(risk) {
+        var map = { "极低": "risk-extreme", "低": "risk-low", "中": "risk-mid", "中高": "risk-midhigh", "高": "risk-high" };
+        return map[risk] || "risk-mid";
+    }
+
+    function renderResults(funds) {
+        var container = $("results-container");
+        if (funds.length === 0) {
+            container.innerHTML = '<div class="col-12"><div class="fund-card text-center py-5"><i class="fas fa-search fa-3x text-muted mb-3"></i><p class="text-muted">未找到匹配的基金</p></div></div>';
+            return;
+        }
+
+        var html = '<div class="col-12"><div class="row" id="fund-cards-row">';
+        funds.forEach(function(fund, idx) {
+            var typeClass = "type-" + getTypeKey(fund.fund_type);
+            var riskClass = getRiskClass(fund.risk);
+            var isStarred = starredFunds.indexOf(fund.fund_code) >= 0;
+            var isComparing = compareFunds.some(function(f) { return f.code === fund.fund_code; });
+
+            html += '<div class="col-lg-6 col-xl-4 mb-3">' +
+                '<div class="fund-card h-100" data-fund-code="' + fund.fund_code + '">' +
+                    '<div class="d-flex justify-content-between align-items-start mb-2">' +
+                        '<div>' +
+                            '<div class="fund-name">' + fund.fund_name + '</div>' +
+                            '<div class="fund-code">' + fund.fund_code + '</div>' +
+                        '</div>' +
+                        '<button class="star-btn ' + (isStarred ? "starred" : "") + '" onclick="toggleStar(\'' + fund.fund_code + '\')">' +
+                            '<i class="fas fa-star"></i>' +
+                        '</button>' +
+                    '</div>' +
+                    '<div class="mb-2">' +
+                        '<span class="fund-type-badge ' + typeClass + '">' + fund.fund_type + '</span> ' +
+                        '<span class="risk-badge ' + riskClass + '">' + fund.risk + '风险</span>' +
+                    '</div>' +
+                    '<div class="realtime-data mb-2" id="realtime-' + fund.fund_code + '">' +
+                        '<div class="spinner-border spinner-border-sm text-info" role="status"></div>' +
+                        '<span class="small text-muted">加载中...</span>' +
+                    '</div>' +
+                    '<div class="small text-muted mb-3">' +
+                        '<i class="fas fa-user me-1"></i>' + (fund.manager || "未知") + ' | ' +
+                        '<i class="fas fa-chart-pie me-1"></i>' + (fund.scale || "未知") +
+                    '</div>' +
+                    '<div class="d-flex gap-2">' +
+                        '<a href="/fund/analysis/' + fund.fund_code + '" class="btn btn-sm btn-danger flex-grow-1">' +
+                            '<i class="fas fa-chart-line me-1"></i>详情' +
+                        '</a>' +
+                        '<button class="btn btn-sm ' + (isComparing ? "btn-success" : "btn-outline-success") + '" onclick="toggleCompare(\'' + fund.fund_code + "','" + fund.fund_name.replace(/'/g, "\\'") + '\')">' +
+                            '<i class="fas fa-balance-scale"></i>' +
+                        '</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+        });
+        html += '</div></div>';
+
+        container.innerHTML = html;
+
+        // 加载每只基金的实时数据
+        funds.forEach(function(fund) {
+            loadRealtimeData(fund.fund_code);
+        });
+    }
+
+    function loadRealtimeData(fundCode) {
+        var container = $("realtime-" + fundCode);
+        if (!container) return;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/fund/api/realtime/" + fundCode, true);
+        xhr.timeout = 5000;
+
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                try {
+                    var resp = JSON.parse(xhr.responseText);
+                    if (resp.success && resp.data) {
+                        var d = resp.data;
+                        var changeClass = d.estimate_change >= 0 ? "text-danger" : "text-success";
+                        var changeSign = d.estimate_change >= 0 ? "+" : "";
+
+                        container.innerHTML =
+                            '<div class="d-flex justify-content-between align-items-center">' +
+                                '<div>' +
+                                    '<span class="fw-bold me-2">净值: ' + d.net_value.toFixed(4) + '</span>' +
+                                    '<span class="small text-muted">(' + d.update_date + ')</span>' +
+                                '</div>' +
+                                '<div class="' + changeClass + ' fw-bold">' +
+                                    '<i class="fas fa-caret-' + (d.estimate_change >= 0 ? "up" : "down") + ' me-1"></i>' +
+                                    '估值: ' + d.estimate_value.toFixed(4) +
+                                    ' <span class="small">(' + changeSign + d.estimate_change.toFixed(2) + '%)</span>' +
+                                '</div>' +
+                            '</div>';
+                    } else {
+                        container.innerHTML = '<span class="small text-muted">暂无实时数据</span>';
+                    }
+                } catch (e) {
+                    container.innerHTML = '<span class="small text-muted">加载失败</span>';
+                }
+            }
+        };
+
+        xhr.ontimeout = function() {
+            container.innerHTML = '<span class="small text-muted">请求超时</span>';
+        };
+
+        xhr.onerror = function() {
+            container.innerHTML = '<span class="small text-muted">加载失败</span>';
+        };
+
+        xhr.send();
+    }
+
+    function renderPagination(totalPages, currentPage) {
+        var container = $("pagination-container");
+        var pagination = $("pagination");
+
+        if (totalPages <= 1) {
+            container.style.display = "none";
+            return;
+        }
+
+        container.style.display = "flex";
+
+        var html = '';
+        if (currentPage > 1) {
+            html += '<li class="page-item"><a class="page-link" href="#" data-page="' + (currentPage - 1) + '">上一页</a></li>';
+        }
+
+        for (var i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                html += '<li class="page-item ' + (i === currentPage ? "active" : "") + '"><a class="page-link" href="#" data-page="' + i + '">' + i + '</a></li>';
+            } else if (i === currentPage - 3 || i === currentPage + 3) {
+                html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+            }
+        }
+
+        if (currentPage < totalPages) {
+            html += '<li class="page-item"><a class="page-link" href="#" data-page="' + (currentPage + 1) + '">下一页</a></li>';
+        }
+
+        pagination.innerHTML = html;
+
+        $$(".page-link[data-page]").forEach(function(link) {
+            link.addEventListener("click", function(e) {
+                e.preventDefault();
+                currentPage = parseInt(this.getAttribute("data-page"));
+                fetchResults();
+            });
+        });
+    }
+
+    function toggleStar(fundCode) {
+        var idx = starredFunds.indexOf(fundCode);
+        if (idx >= 0) {
+            starredFunds.splice(idx, 1);
+        } else {
+            starredFunds.push(fundCode);
+        }
+        localStorage.setItem("starredFunds", JSON.stringify(starredFunds));
+        updateCounts();
+    }
+
+    function toggleCompare(fundCode, fundName) {
+        var idx = compareFunds.findIndex(function(f) { return f.code === fundCode; });
+        if (idx >= 0) {
+            compareFunds.splice(idx, 1);
+        } else {
+            if (compareFunds.length >= 5) {
+                alert("对比列表已满（最多5只）");
+                return;
+            }
+            compareFunds.push({ code: fundCode, name: fundName });
+        }
+        sessionStorage.setItem("compareFunds", JSON.stringify(compareFunds));
+        updateCounts();
+    }
+
+    function updateCounts() {
+        $("starred-count").textContent = starredFunds.length;
+        $("compare-count").textContent = compareFunds.length;
+    }
+
+    window.toggleStar = toggleStar;
+    window.toggleCompare = toggleCompare;
+
+    document.addEventListener("DOMContentLoaded", init);
+})();
+</script>
+{% endblock %}

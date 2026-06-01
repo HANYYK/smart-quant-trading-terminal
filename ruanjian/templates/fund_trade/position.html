@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}基金持仓 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Fund Portfolio</p>
+            <h1 class="page-title mb-1">基金持仓明细</h1>
+            <p class="text-muted mb-0">查看当前持有的所有基金。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('fund_trade.index') }}">
+                <i class="fas fa-exchange-alt me-2"></i>去交易
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="metric-card metric-flat"><span>持仓市值</span><strong id="position-value">--</strong></div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-flat"><span>持有基金数</span><strong id="fund-count">--</strong></div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-up"><span>持仓盈亏</span><strong id="total-profit">--</strong></div>
+        </div>
+    </div>
+
+    <div class="card terminal-card">
+        <div class="card-header"><h5 class="mb-0"><i class="fas fa-briefcase me-2 text-success"></i>持仓列表</h5></div>
+        <div class="card-body p-0">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr><th>基金代码</th><th>基金名称</th><th>持有份额</th><th>成本净值</th><th>当前净值</th><th>市值</th><th>盈亏</th><th>盈亏率</th></tr></thead>
+                <tbody id="position-tbody"><tr><td colspan="8" class="text-center">加载中...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    function formatMoney(n) { return (n || 0).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+    function loadPositions() {
+        $.get("/fund/trade/api/position/list", function(res) {
+            var tb = $("#position-tbody");
+            var totalValue = 0, totalProfit = 0;
+            if (res.success && res.data.length > 0) {
+                tb.empty();
+                res.data.forEach(function(p) {
+                    totalValue += p.market_value; totalProfit += p.profit;
+                    var cls = p.profit >= 0 ? "text-danger" : "text-success";
+                    var sgn = p.profit >= 0 ? "+" : "";
+                    tb.append('<tr><td>' + p.fund_code + '</td><td>' + p.fund_name + '</td><td>' + p.total_shares.toFixed(2) + '</td><td>' + p.avg_cost.toFixed(4) + '</td><td>' + p.current_nav.toFixed(4) + '</td><td>' + formatMoney(p.market_value) + '</td><td class="' + cls + '">' + sgn + formatMoney(p.profit) + '</td><td class="' + cls + '">' + sgn + p.profit_rate.toFixed(2) + '%</td></tr>');
+                });
+            } else { tb.html('<tr><td colspan="8" class="text-center text-muted">暂无持仓</td></tr>'); }
+            $("#position-value").text(formatMoney(totalValue) + " 元");
+            $("#fund-count").text(res.data ? res.data.length : 0);
+            var cls = totalProfit >= 0 ? "text-danger" : "text-success";
+            var sgn = totalProfit >= 0 ? "+" : "";
+            $("#total-profit").removeClass("text-danger text-success").addClass(cls).text(sgn + formatMoney(totalProfit) + " 元");
+        });
+    }
+    loadPositions();
+})();
+</script>
+{% endblock %}

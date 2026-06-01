@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(du -sh venv/ venv_old/ cache/ logs/ instance/)",
+      "Bash(ls -la instance/)",
+      "Bash(ls -la logs/)",
+      "Bash(ls -la cache/)",
+      "Bash(gh auth *)",
+      "Bash(git --version)",
+      "Bash(winget install *)",
+      "Bash(git add *)"
+    ]
+  }
+}

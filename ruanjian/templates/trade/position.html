@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}持仓明细 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Portfolio</p>
+            <h1 class="page-title mb-1">持仓明细</h1>
+            <p class="text-muted mb-0">查看当前持仓股票的详细信息。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('trade.index') }}">
+                <i class="fas fa-exchange-alt me-2"></i>去交易
+            </a>
+        </div>
+    </div>
+
+    <!-- 持仓汇总 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="metric-card metric-up">
+                <span>持仓市值</span>
+                <strong id="position-value">--</strong>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-flat">
+                <span>持仓数量</span>
+                <strong id="position-count">--</strong>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-up">
+                <span>持仓盈亏</span>
+                <strong id="position-profit">--</strong>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-flat">
+                <span>持仓盈亏率</span>
+                <strong id="position-profit-rate">--</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- 持仓表格 -->
+    <div class="card terminal-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-briefcase me-2 text-success"></i>持仓列表</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>股票代码</th>
+                            <th>股票名称</th>
+                            <th>持仓数量</th>
+                            <th>成本价</th>
+                            <th>当前价</th>
+                            <th>市值</th>
+                            <th>盈亏</th>
+                            <th>盈亏率</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="position-tbody">
+                        <tr><td colspan="9" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 交易模态框 -->
+<div class="modal fade" id="tradeModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="tradeModalTitle">交易</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3 text-center">
+                    <h4 id="modal-stock-name">--</h4>
+                    <div class="text-muted" id="modal-stock-code">--</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">当前价格</label>
+                    <input type="number" class="form-control" id="modal-price" step="0.01" min="0">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">数量（手）</label>
+                    <input type="number" class="form-control" id="modal-quantity" min="1" step="1">
+                    <div class="form-text" id="modal-max-qty">最大可交易: 0股</div>
+                </div>
+                <div class="p-3 bg-black rounded">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>预估金额：</span>
+                        <span id="modal-amount">0.00 元</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>预估手续费：</span>
+                        <span id="modal-commission">0.00 元</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="modal-buy-btn">买入</button>
+                <button type="button" class="btn btn-success" id="modal-sell-btn">卖出</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+
+    var currentStock = null;
+    var modalInstance = null;
+
+    function formatMoney(num) {
+        return (num || 0).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function loadPositions() {
+        $.get("/trade/api/position/list", function(res) {
+            var tbody = $("#position-tbody");
+            var totalValue = 0, totalProfit = 0;
+
+            if (res.success && res.data.length > 0) {
+                tbody.empty();
+                res.data.forEach(function(p) {
+                    totalValue += p.market_value;
+                    totalProfit += p.profit;
+
+                    var profitClass = p.profit >= 0 ? "text-danger" : "text-success";
+                    var profitSign = p.profit >= 0 ? "+" : "";
+                    var profitRateSign = p.profit_rate >= 0 ? "+" : "";
+
+                    tbody.append('<tr>' +
+                        '<td><a href="/stock/detail/' + p.stock_code + '" class="text-info">' + p.stock_code + '</a></td>' +
+                        '<td>' + p.stock_name + '</td>' +
+                        '<td>' + p.quantity + '</td>' +
+                        '<td>' + p.avg_cost + '</td>' +
+                        '<td>' + p.current_price + '</td>' +
+                        '<td>' + formatMoney(p.market_value) + '</td>' +
+                        '<td class="' + profitClass + '">' + profitSign + formatMoney(p.profit) + '</td>' +
+                        '<td class="' + profitClass + '">' + profitRateSign + p.profit_rate.toFixed(2) + '%</td>' +
+                        '<td><button class="btn btn-sm btn-outline-light trade-btn" data-code="' + p.stock_code +
+                                   '" data-name="' + p.stock_name + '" data-qty="' + p.quantity + '">交易</button></td></tr>');
+                });
+            } else {
+                tbody.html('<tr><td colspan="9" class="text-center text-muted">暂无持仓</td></tr>');
+            }
+
+            var profitRate = totalValue > 0 ? (totalProfit / (totalValue - totalProfit) * 100) : 0;
+            $("#position-value").text(formatMoney(totalValue) + " 元");
+            $("#position-count").text(res.data ? res.data.length : 0);
+            $("#position-profit").text((totalProfit >= 0 ? "+" : "") + formatMoney(totalProfit) + " 元");
+            $("#position-profit").removeClass("text-danger text-success").addClass(totalProfit >= 0 ? "text-danger" : "text-success");
+            $("#position-profit-rate").text((profitRate >= 0 ? "+" : "") + profitRate.toFixed(2) + "%");
+            $("#position-profit-rate").removeClass("text-danger text-success").addClass(profitRate >= 0 ? "text-danger" : "text-success");
+        });
+    }
+
+    function openTradeModal(code, name, qty) {
+        currentStock = {code: code, name: name, quantity: qty};
+        $("#modal-stock-name").text(name);
+        $("#modal-stock-code").text(code);
+        $("#modal-max-qty").text("最大可卖: " + qty + "股");
+
+        // 获取实时价格
+        $.get("/trade/api/stock/quote/" + code, function(res) {
+            if (res.success) {
+                $("#modal-price").val(res.data.stock.price.toFixed(2));
+                if (res.data.holding) {
+                    $("#modal-max-qty").text("最大可卖: " + res.data.holding.quantity + "股");
+                    currentStock.quantity = res.data.holding.quantity;
+                }
+            }
+        });
+
+        $("#modal-quantity").val("");
+        $("#modal-amount").text("0.00 元");
+        $("#modal-commission").text("0.00 元");
+
+        if (!modalInstance) {
+            modalInstance = new bootstrap.Modal($("#tradeModal")[0]);
+        }
+        modalInstance.show();
+    }
+
+    function updateModalCalc() {
+        var price = parseFloat($("#modal-price").val()) || 0;
+        var qty = parseInt($("#modal-quantity").val()) || 0;
+        var amount = price * qty;  // 直接使用股数，不再乘以100
+        var commission = Math.max(5, amount * 0.0003);
+        $("#modal-amount").text(formatMoney(amount) + " 元");
+        $("#modal-commission").text(formatMoney(commission) + " 元");
+    }
+
+    function doBuy() {
+        var price = parseFloat($("#modal-price").val());
+        var qty = parseInt($("#modal-quantity").val()) || 0;
+        var quantity = qty;
+
+        if (!price || price <= 0) { alert("请输入有效价格"); return; }
+        if (quantity < 100 || quantity % 100 !== 0) { alert("数量必须为100的整数倍"); return; }
+
+        $.ajax({
+            url: "/trade/api/buy",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({stock_code: currentStock.code, price: price, quantity: quantity}),
+            success: function(res) {
+                if (res.success) {
+                    modalInstance.hide();
+                    alert("买入成功！\n" + res.message);
+                    loadPositions();
+                } else {
+                    alert("买入失败: " + res.error);
+                }
+            }
+        });
+    }
+
+    function doSell() {
+        var price = parseFloat($("#modal-price").val());
+        var qty = parseInt($("#modal-quantity").val()) || 0;
+        var quantity = qty;
+
+        if (!price || price <= 0) { alert("请输入有效价格"); return; }
+        if (quantity < 100 || quantity % 100 !== 0) { alert("数量必须为100的整数倍"); return; }
+        if (quantity > currentStock.quantity) { alert("超过最大可卖数量"); return; }
+
+        $.ajax({
+            url: "/trade/api/sell",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({stock_code: currentStock.code, price: price, quantity: quantity}),
+            success: function(res) {
+                if (res.success) {
+                    modalInstance.hide();
+                    alert("卖出成功！\n" + res.message);
+                    loadPositions();
+                } else {
+                    alert("卖出失败: " + res.error);
+                }
+            }
+        });
+    }
+
+    $(document).on("click", ".trade-btn", function() {
+        openTradeModal($(this).data("code"), $(this).data("name"), $(this).data("qty"));
+    });
+
+    $("#modal-price, #modal-quantity").on("input", updateModalCalc);
+    $("#modal-buy-btn").click(doBuy);
+    $("#modal-sell-btn").click(doSell);
+
+    loadPositions();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}账户管理 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Account Management</p>
+            <h1 class="page-title mb-1">账户管理</h1>
+            <p class="text-muted mb-0">查看账户信息、统计和资金设置。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('trade.index') }}">
+                <i class="fas fa-exchange-alt me-2"></i>去交易
+            </a>
+        </div>
+    </div>
+
+    <!-- 账户概览 -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card terminal-card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie me-2 text-info"></i>资产概览</h5>
+                    <button class="btn btn-sm btn-outline-light" id="refresh-account-btn" title="刷新">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="card-body" id="account-body">
+                    <div class="text-center text-muted py-4" id="account-loading">
+                        <i class="fas fa-spinner fa-spin me-2"></i>加载中...
+                    </div>
+                    <div id="account-content" class="d-none">
+                        <div class="account-summary mb-4">
+                            <div class="text-muted mb-1">总资产</div>
+                            <div class="h3 text-primary mb-0" id="total-assets">--</div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <div class="text-muted small">初始资金</div>
+                                    <div class="fw-bold" id="initial-cash">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <div class="text-muted small">可用资金</div>
+                                    <div class="fw-bold" id="current-cash">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <div class="text-muted small">冻结资金</div>
+                                    <div class="fw-bold" id="frozen-cash">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <div class="text-muted small">股票持仓</div>
+                                    <div class="fw-bold" id="position-value">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <div class="text-muted small">基金持仓</div>
+                                    <div class="fw-bold" id="fund-position-value">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-box">
+                                    <div class="text-muted small">总持仓</div>
+                                    <div class="fw-bold" id="total-position-value">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-center text-muted py-4 d-none" id="account-error">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <div id="account-error-msg">加载失败</div>
+                        <button class="btn btn-sm btn-outline-warning mt-2" onclick="loadAccountInfo()">
+                            <i class="fas fa-redo me-1"></i>重试
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card terminal-card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-line me-2 text-success"></i>收益概览</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <div class="text-muted mb-1">投资收益率</div>
+                        <div class="h2 mb-0" id="profit-rate">--</div>
+                    </div>
+                    <div class="profit-detail">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">投资收益</span>
+                            <span id="total-profit">--</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                        <span class="text-muted">股票持仓盈亏</span>
+                        <span id="position-profit">--</span>
+                        </div>
+                    </div>
+                    <hr class="border-secondary">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">持仓数量</span>
+                        <span id="position-count">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card terminal-card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-sliders-h me-2 text-warning"></i>资金设置</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">初始资金</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="initial-cash-input" placeholder="1000000" min="10000" max="100000000">
+                            <button class="btn btn-outline-warning" type="button" id="set-cash-btn">设置</button>
+                        </div>
+                        <div class="form-text">范围: 1万 - 1亿</div>
+                    </div>
+                    <hr class="border-secondary">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-danger" id="reset-btn">
+                            <i class="fas fa-redo me-2"></i>重置账户
+                        </button>
+                    </div>
+                    <div class="form-text mt-2 text-warning">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        重置将清空股票和基金的所有持仓、定投计划和交易记录
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易统计 -->
+    <div class="card terminal-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-calculator me-2 text-info"></i>交易统计</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-4">
+                <div class="col-md-2">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-total-trades">--</div>
+                        <div class="stat-label">总交易次数</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card">
+                        <div class="stat-value text-danger" id="stat-buy-count">--</div>
+                        <div class="stat-label">买入次数</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card">
+                        <div class="stat-value text-success" id="stat-sell-count">--</div>
+                        <div class="stat-label">卖出次数</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-commission">--</div>
+                        <div class="stat-label">手续费合计</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card">
+                        <div class="stat-value text-danger" id="stat-win-count">--</div>
+                        <div class="stat-label">盈利次数</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-card">
+                        <div class="stat-value text-warning" id="stat-win-rate">--</div>
+                        <div class="stat-label">胜率</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重置确认模态框 -->
+<div class="modal fade" id="resetModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-danger"><i class="fas fa-exclamation-triangle me-2"></i>确认重置</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <p class="mb-3">确定要重置账户吗？</p>
+                <p class="text-warning small">此操作将：</p>
+                <ul class="text-start small text-muted">
+                    <li>清空股票和基金持仓</li>
+                    <li>清空股票和基金交易记录</li>
+                    <li>清空基金定投计划</li>
+                    <li>重置可用资金为初始资金</li>
+                </ul>
+                <p class="text-danger small mb-0">此操作不可恢复！</p>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirm-reset-btn">确认重置</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+
+    function formatMoney(num) {
+        return (num || 0).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function loadAccountInfo() {
+        // 显示加载状态
+        $("#account-loading").removeClass("d-none");
+        $("#account-content").addClass("d-none");
+        $("#account-error").addClass("d-none");
+
+        $.get("/trade/api/account/info", function(res) {
+            $("#account-loading").addClass("d-none");
+
+            if (res.success) {
+                var d = res.data;
+
+                $("#total-assets").text(formatMoney(d.total_assets) + " 元");
+                $("#initial-cash").text(formatMoney(d.initial_cash) + " 元");
+                $("#current-cash").text(formatMoney(d.current_cash) + " 元");
+                $("#frozen-cash").text(formatMoney(d.frozen_cash) + " 元");
+                $("#position-value").text(formatMoney(d.position_value) + " 元");
+                $("#fund-position-value").text(formatMoney(d.fund_position_value || 0) + " 元");
+                $("#total-position-value").text(formatMoney(d.total_position_value || d.position_value || 0) + " 元");
+
+                var profitRateSign = d.profit_rate >= 0 ? "+" : "";
+                var profitSign = d.total_profit >= 0 ? "+" : "";
+
+                $("#profit-rate").removeClass("text-danger text-success")
+                                 .addClass(d.profit_rate >= 0 ? "text-danger" : "text-success")
+                                 .text(profitRateSign + d.profit_rate.toFixed(2) + "%");
+
+                $("#total-profit").removeClass("text-danger text-success")
+                                 .addClass(d.total_profit >= 0 ? "text-danger" : "text-success")
+                                 .text(profitSign + formatMoney(d.total_profit) + " 元");
+
+                $("#position-profit").text(formatMoney(d.stock_position_profit || 0) + " 元");
+                $("#position-count").text(d.position_count + " 只");
+
+                $("#initial-cash-input").val(d.initial_cash);
+
+                $("#account-content").removeClass("d-none");
+            } else {
+                $("#account-error-msg").text(res.error || "加载失败");
+                $("#account-error").removeClass("d-none");
+            }
+        }).fail(function() {
+            $("#account-loading").addClass("d-none");
+            $("#account-error-msg").text("网络错误");
+            $("#account-error").removeClass("d-none");
+        });
+    }
+
+    function loadSummary() {
+        $.get("/trade/api/summary", function(res) {
+            if (res.success) {
+                var d = res.data;
+                $("#stat-total-trades").text(d.total_trades);
+                $("#stat-buy-count").text(d.buy_count);
+                $("#stat-sell-count").text(d.sell_count);
+                $("#stat-commission").text(formatMoney(d.total_commission) + " 元");
+                $("#stat-win-count").text(d.win_count);
+                $("#stat-win-rate").text(d.win_rate.toFixed(1) + "%");
+            }
+        });
+    }
+
+    function setInitialCash() {
+        var amount = parseFloat($("#initial-cash-input").val());
+        if (!amount || amount < 10000 || amount > 100000000) {
+            alert("初始资金范围: 1万 - 1亿");
+            return;
+        }
+
+        if (!confirm("确定要修改初始资金为 " + formatMoney(amount) + " 元吗？")) return;
+
+        $.ajax({
+            url: "/trade/api/set-initial-cash",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({amount: amount}),
+            success: function(res) {
+                if (res.success) {
+                    alert("设置成功！");
+                    loadAccountInfo();
+                } else {
+                    alert("设置失败: " + res.error);
+                }
+            }
+        });
+    }
+
+    function resetAccount() {
+        $.ajax({
+            url: "/trade/api/reset",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({confirm: true}),
+            success: function(res) {
+                if (res.success) {
+                    bootstrap.Modal.getInstance($("#resetModal")[0]).hide();
+                    alert("账户已重置！");
+                    loadAccountInfo();
+                    loadSummary();
+                } else {
+                    alert("重置失败: " + res.error);
+                }
+            }
+        });
+    }
+
+    $("#set-cash-btn").click(setInitialCash);
+    $("#reset-btn").click(function() {
+        new bootstrap.Modal($("#resetModal")[0]).show();
+    });
+    $("#confirm-reset-btn").click(resetAccount);
+    $("#refresh-account-btn").click(function() {
+        loadAccountInfo();
+        loadSummary();
+    });
+
+    loadAccountInfo();
+    loadSummary();
+})();
+</script>
+{% endblock %}

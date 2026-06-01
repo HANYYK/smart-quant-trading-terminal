@@ -1,0 +1,951 @@
+{% extends "base.html" %}
+
+{% block title %}基金对比 - 智能量化交易终端{% endblock %}
+
+{% block extra_css %}
+<style>
+.compare-header {
+    background: linear-gradient(135deg, rgba(31, 193, 139, 0.15) 0%, rgba(79, 179, 255, 0.1) 100%);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.search-box {
+    position: relative;
+}
+.search-box .form-control {
+    background: rgba(24, 29, 37, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 0.8rem 1rem 0.8rem 2.8rem;
+    color: var(--text-primary);
+    transition: all 0.3s ease;
+}
+.search-box .form-control:focus {
+    border-color: var(--accent-green);
+    box-shadow: 0 0 0 3px rgba(31, 193, 139, 0.15);
+}
+.search-box .search-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+}
+.fund-card {
+    background: rgba(28, 34, 43, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+.fund-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.fund-card:hover::before {
+    opacity: 1;
+}
+.fund-card:hover {
+    border-color: rgba(31, 193, 139, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+.fund-card .remove-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(220, 53, 69, 0.2);
+    border: none;
+    color: var(--accent-red);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+.fund-card:hover .remove-btn {
+    opacity: 1;
+}
+.fund-card .remove-btn:hover {
+    background: var(--accent-red);
+    color: white;
+}
+.metric-badge {
+    background: rgba(31, 193, 139, 0.1);
+    border: 1px solid rgba(31, 193, 139, 0.2);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    text-align: center;
+}
+.metric-badge .value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent-green);
+}
+.metric-badge .label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.2rem;
+}
+.metric-badge.negative .value {
+    color: var(--accent-red);
+}
+.chart-container {
+    height: 400px;
+    background: rgba(24, 29, 37, 0.5);
+    border-radius: 12px;
+    padding: 1rem;
+}
+.compare-table {
+    background: rgba(24, 29, 37, 0.5);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.compare-table th {
+    background: rgba(31, 193, 139, 0.1);
+    color: var(--accent-green);
+    font-weight: 600;
+    padding: 1rem;
+    border: none;
+}
+.compare-table td {
+    padding: 0.8rem 1rem;
+    border-color: rgba(255, 255, 255, 0.05);
+    vertical-align: middle;
+}
+.compare-table tbody tr:hover {
+    background: rgba(31, 193, 139, 0.05);
+}
+.winner-cell {
+    background: rgba(31, 193, 139, 0.1) !important;
+    color: var(--accent-green);
+    font-weight: 600;
+}
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+.empty-state i {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.3;
+}
+.radar-card {
+    background: rgba(28, 34, 43, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+.score-card {
+    background: linear-gradient(135deg, rgba(31, 193, 139, 0.2) 0%, rgba(79, 179, 255, 0.1) 100%);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+}
+.score-card .score {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+.score-card .label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+.nav-tabs-compare {
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+.nav-tabs-compare .nav-link {
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.75rem 1.5rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+.nav-tabs-compare .nav-link:hover {
+    color: var(--accent-green);
+    border-color: transparent;
+}
+.nav-tabs-compare .nav-link.active {
+    color: var(--accent-green);
+    border-bottom-color: var(--accent-green);
+    background: transparent;
+}
+.indicator-group {
+    background: rgba(24, 29, 37, 0.5);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+}
+.indicator-group-title {
+    font-weight: 600;
+    color: var(--accent-green);
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="compare-header">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h2 class="text-light mb-1">
+                    <i class="fas fa-balance-scale text-info me-2"></i>基金对比
+                </h2>
+                <p class="text-muted mb-0">选择2-5只基金进行综合对比分析</p>
+            </div>
+            <div class="col-md-6">
+                <div class="search-box">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" class="form-control" id="fund-search" placeholder="输入基金代码或名称搜索...">
+                </div>
+                <div id="search-results" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4" id="compare-cards">
+        <div class="col-12">
+            <div class="empty-state" id="empty-state">
+                <i class="fas fa-chart-pie"></i>
+                <h4>添加基金开始对比</h4>
+                <p>在上方搜索框输入基金代码或名称，然后点击添加到对比列表</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row" id="compare-content" style="display: none;">
+        <div class="col-12 mb-4">
+            <ul class="nav nav-tabs nav-tabs-compare mb-3" id="compareTabs">
+                <li class="nav-item">
+                    <a class="nav-link active" data-bs-toggle="tab" href="#chart-tab">业绩走势</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#radar-tab">雷达图</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#metrics-tab">多指标</a>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="chart-tab">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>业绩对比走势</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex gap-3 mb-3">
+                                <select id="period-select" class="form-select" style="width: auto;">
+                                    <option value="30">近1月</option>
+                                    <option value="90" selected>近3月</option>
+                                    <option value="180">近6月</option>
+                                    <option value="365">近1年</option>
+                                </select>
+                                <select id="index-select" class="form-select" style="width: auto;">
+                                    <option value="">不显示基准</option>
+                                    <option value="000300" selected>沪深300</option>
+                                    <option value="000001">上证指数</option>
+                                </select>
+                            </div>
+                            <div id="compare-chart" class="chart-container"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="radar-tab">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>多维度能力对比</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="radar-chart" style="height: 400px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-trophy me-2"></i>综合评分排名</h5>
+                                </div>
+                                <div class="card-body" id="score-ranking">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="metrics-tab">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-table me-2"></i>关键指标对比</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table compare-table mb-0" id="metrics-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 150px;">指标</th>
+                                            <th id="th-fund-1">-</th>
+                                            <th id="th-fund-2">-</th>
+                                            <th id="th-fund-3">-</th>
+                                            <th id="th-fund-4">-</th>
+                                            <th id="th-fund-5">-</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="compare-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>收益能力对比</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="return-bar-chart" style="height: 300px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>风险控制对比</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="risk-bar-chart" style="height: 300px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script>
+const compareFunds = [];
+let compareChart = null;
+let radarChart = null;
+let returnBarChart = null;
+let riskBarChart = null;
+let allMetrics = {};
+
+function initChart() {
+    compareChart = echarts.init(document.getElementById('compare-chart'));
+    radarChart = echarts.init(document.getElementById('radar-chart'));
+    returnBarChart = echarts.init(document.getElementById('return-bar-chart'));
+    riskBarChart = echarts.init(document.getElementById('risk-bar-chart'));
+
+    window.addEventListener('resize', () => {
+        compareChart.resize();
+        if (radarChart) radarChart.resize();
+        if (returnBarChart) returnBarChart.resize();
+        if (riskBarChart) riskBarChart.resize();
+    });
+}
+
+function addFund(fundCode, fundName) {
+    if (compareFunds.length >= 5) {
+        showToast('最多只能对比5只基金');
+        return;
+    }
+    if (compareFunds.some(f => f.code === fundCode)) {
+        showToast('该基金已在对比列表中');
+        return;
+    }
+
+    compareFunds.push({ code: fundCode, name: fundName });
+    loadFundData(fundCode);
+    updateUI();
+}
+
+function removeFund(fundCode) {
+    const index = compareFunds.findIndex(f => f.code === fundCode);
+    if (index > -1) {
+        compareFunds.splice(index, 1);
+        updateUI();
+    }
+}
+
+function updateUI() {
+    if (compareFunds.length === 0) {
+        $('#empty-state').show();
+        $('#compare-content').hide();
+        return;
+    }
+
+    $('#empty-state').hide();
+    $('#compare-content').show();
+
+    let cardsHtml = '';
+    compareFunds.forEach((fund, index) => {
+        cardsHtml += `
+            <div class="col-md-${compareFunds.length <= 2 ? 6 : 4} mb-3">
+                <div class="fund-card">
+                    <button class="remove-btn" onclick="removeFund('${fund.code}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="mb-1 text-light">${fund.name}</h5>
+                            <small class="text-muted">${fund.code}</small>
+                        </div>
+                        <span class="badge bg-primary">#${index + 1}</span>
+                    </div>
+                    <div class="row g-2" id="metrics-${fund.code}">
+                        <div class="col-6">
+                            <div class="metric-badge">
+                                <div class="value">-</div>
+                                <div class="label">近1年收益</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="metric-badge">
+                                <div class="value">-</div>
+                                <div class="label">夏普比率</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="metric-badge">
+                                <div class="value">-</div>
+                                <div class="label">最大回撤</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="metric-badge">
+                                <div class="value">-</div>
+                                <div class="label">综合评分</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <a href="/fund/analysis/${fund.code}" class="btn btn-sm btn-outline-info w-100">
+                            <i class="fas fa-chart-bar me-1"></i>详细分析
+                        </a>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    $('#compare-cards').html(cardsHtml);
+    updateTableHeaders();
+}
+
+function updateTableHeaders() {
+    for (let i = 1; i <= 5; i++) {
+        const th = $(`#th-fund-${i}`);
+        if (i <= compareFunds.length) {
+            th.text(compareFunds[i-1].name).parent().show();
+        } else {
+            th.text('-').parent().hide();
+        }
+    }
+}
+
+function loadFundData(fundCode) {
+    $.ajax({
+        url: `/fund/api/compare?codes=${fundCode}`,
+        success: function(response) {
+            if (response.success && response.data.length > 0) {
+                const data = response.data[0];
+                allMetrics[fundCode] = data.performance;
+                updateMetrics(fundCode, data.performance);
+                updateChart();
+                updateRadarChart();
+                updateMetricsTable();
+                updateScoreRanking();
+                updateBarCharts();
+            }
+        }
+    });
+}
+
+function calculateScore(perf) {
+    let score = 50;
+    const totalReturn = perf.total_return || 0;
+    const sharpe = perf.sharpe_ratio || 0;
+    const maxDd = perf.max_drawdown || 100;
+    const volatility = perf.volatility || 0;
+
+    if (totalReturn > 0) score += Math.min(20, totalReturn / 5);
+    if (sharpe > 1) score += Math.min(15, sharpe * 5);
+    if (maxDd < 30) score += Math.min(10, (30 - maxDd) / 3);
+    if (volatility < 30) score += Math.min(5, (30 - volatility) / 6);
+
+    return Math.round(Math.max(0, Math.min(100, score)));
+}
+
+function updateMetrics(fundCode, perf) {
+    const container = $(`#metrics-${fundCode}`);
+    if (!container.length) return;
+
+    const score = calculateScore(perf);
+    const values = [
+        { value: perf.total_return, suffix: '%', isPercent: true },
+        { value: perf.sharpe_ratio, suffix: '', isPercent: false },
+        { value: perf.max_drawdown, suffix: '%', isPercent: true },
+        { value: score, suffix: '分', isPercent: false },
+    ];
+
+    const badges = container.find('.metric-badge');
+    badges.each((i, badge) => {
+        const v = values[i];
+        const valEl = $(badge).find('.value');
+        valEl.text((v.value >= 0 && v.isPercent ? '+' : '') + v.value.toFixed(2) + v.suffix);
+        if (v.isPercent && v.value < 0) {
+            $(badge).addClass('negative');
+        } else {
+            $(badge).removeClass('negative');
+        }
+    });
+}
+
+function updateChart() {
+    const period = $('#period-select').val();
+    const indexCode = $('#index-select').val();
+    const codes = compareFunds.map(f => f.code).join(',');
+
+    const series = [];
+    const dates = new Set();
+    const fundData = {};
+
+    compareFunds.forEach(fund => {
+        fundData[fund.code] = {};
+    });
+
+    let loaded = 0;
+    compareFunds.forEach(fund => {
+        $.ajax({
+            url: `/fund/api/history/${fund.code}?days=${period}`,
+            success: function(response) {
+                if (response.success) {
+                    let baseValue = null;
+                    response.data.forEach(item => {
+                        dates.add(item.date);
+                        if (baseValue === null) baseValue = item.net_value;
+                        fundData[fund.code][item.date] = baseValue > 0
+                            ? ((item.net_value - baseValue) / baseValue * 100).toFixed(2)
+                            : 0;
+                    });
+                }
+                loaded++;
+                if (loaded === compareFunds.length) {
+                    if (indexCode) {
+                        $.ajax({
+                            url: `/fund/api/index/${indexCode}?days=${period}`,
+                            async: false,
+                            success: function(res) {
+                                if (res.success) {
+                                    res.data.forEach(item => {
+                                        dates.add(item.date);
+                                        fundData['__index__'] = fundData['__index__'] || {};
+                                        fundData['__index__'][item.date] = item.change_pct;
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    renderChart(dates, fundData);
+                }
+            }
+        });
+    });
+}
+
+function renderChart(dates, fundData) {
+    const sortedDates = Array.from(dates).sort();
+    const colors = ['#4fd9a0', '#4fb3ff', '#ff6b6b', '#ffd93d', '#a66cff'];
+
+    const seriesData = [];
+    let seriesIndex = 0;
+
+    compareFunds.forEach(fund => {
+        seriesData.push({
+            name: fund.name,
+            type: 'line',
+            data: sortedDates.map(d => fundData[fund.code][d] || null),
+            smooth: true,
+            lineStyle: { color: colors[seriesIndex], width: 2 },
+            itemStyle: { color: colors[seriesIndex] },
+            showSymbol: false,
+            connectNulls: true,
+        });
+        seriesIndex++;
+    });
+
+    if (fundData['__index__']) {
+        const indexName = $('#index-select option:selected').text();
+        seriesData.push({
+            name: indexName,
+            type: 'line',
+            data: sortedDates.map(d => fundData['__index__'][d] || null),
+            smooth: true,
+            lineStyle: { color: 'rgba(255,255,255,0.3)', width: 1, type: 'dashed' },
+            itemStyle: { color: 'rgba(255,255,255,0.3)' },
+            showSymbol: false,
+            connectNulls: true,
+        });
+    }
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                let html = `<strong>${params[0].name}</strong><br/>`;
+                params.forEach(p => {
+                    if (p.value !== null) {
+                        const color = p.color.colorStops ? p.color.colorStops[0].color : p.color;
+                        html += `<span style="color:${color}">●</span> ${p.seriesName}: ${parseFloat(p.value).toFixed(2)}%<br/>`;
+                    }
+                });
+                return html;
+            }
+        },
+        legend: {
+            data: seriesData.map(s => s.name),
+            textStyle: { color: '#999' },
+            top: 10
+        },
+        grid: { left: '3%', right: '4%', bottom: '15%', top: '20%', containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: sortedDates,
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', rotate: 45 }
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', formatter: '{value}%' },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } }
+        },
+        dataZoom: [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100 }
+        ],
+        series: seriesData
+    };
+
+    compareChart.setOption(option, true);
+}
+
+function updateRadarChart() {
+    const indicators = [
+        { name: '收益能力', max: 100 },
+        { name: '风险控制', max: 100 },
+        { name: '稳定性', max: 100 },
+        { name: '夏普比率', max: 3 },
+        { name: '抗跌性', max: 100 },
+    ];
+
+    const colors = ['#4fd9a0', '#4fb3ff', '#ff6b6b', '#ffd93d', '#a66cff'];
+    const seriesData = [];
+
+    compareFunds.forEach((fund, index) => {
+        const perf = allMetrics[fund.code] || {};
+        const score = calculateScore(perf);
+        const maxDd = perf.max_drawdown || 50;
+        const volatility = perf.volatility || 30;
+        const sharpe = perf.sharpe_ratio || 0.5;
+
+        const recoveryAbility = Math.min(100, Math.max(0, 100 - maxDd * 2));
+        const stability = Math.min(100, Math.max(0, 100 - volatility * 2));
+        const riskControl = Math.min(100, Math.max(0, 100 - maxDd));
+
+        seriesData.push({
+            value: [
+                Math.min(100, Math.max(0, perf.total_return || 0)),
+                riskControl,
+                stability,
+                Math.min(3, Math.max(0, sharpe)),
+                recoveryAbility
+            ],
+            name: fund.name,
+            lineStyle: { color: colors[index], width: 2 },
+            areaStyle: { color: colors[index], opacity: 0.15 },
+            itemStyle: { color: colors[index] }
+        });
+    });
+
+    const option = {
+        tooltip: {
+            trigger: 'item',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' }
+        },
+        legend: {
+            data: compareFunds.map(f => f.name),
+            textStyle: { color: '#999' },
+            bottom: 10
+        },
+        radar: {
+            indicator: indicators,
+            axisName: { color: '#999', fontSize: 12 },
+            splitArea: { areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.05)'] } },
+            axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+        },
+        series: [{
+            type: 'radar',
+            data: seriesData
+        }]
+    };
+
+    radarChart.setOption(option, true);
+}
+
+function updateScoreRanking() {
+    const scores = compareFunds.map(fund => {
+        const perf = allMetrics[fund.code] || {};
+        return {
+            name: fund.name,
+            code: fund.code,
+            score: calculateScore(perf)
+        };
+    }).sort((a, b) => b.score - a.score);
+
+    const colors = ['#ffd700', '#c0c0c0', '#cd7f32'];
+    let html = '';
+    scores.forEach((item, index) => {
+        const medal = index < 3 ? `<span class="badge" style="background: ${colors[index]}; color: ${index === 0 ? '#000' : '#fff'}">${index + 1}</span>` : `<span class="badge bg-secondary">${index + 1}</span>`;
+        const scoreColor = item.score >= 70 ? 'text-success' : item.score >= 50 ? 'text-warning' : 'text-danger';
+        html += `
+            <div class="d-flex justify-content-between align-items-center p-2 mb-2" style="background: rgba(24,29,37,0.5); border-radius: 8px;">
+                ${medal}
+                <div class="flex-grow-1 ms-2">
+                    <div class="text-light small">${item.name}</div>
+                    <small class="text-muted">${item.code}</small>
+                </div>
+                <span class="${scoreColor} fw-bold" style="font-size: 1.2rem;">${item.score}</span>
+            </div>
+        `;
+    });
+
+    $('#score-ranking').html(html);
+}
+
+function updateMetricsTable() {
+    const rows = [
+        { label: '近1年收益', key: 'total_return', suffix: '%', higher: true, group: '收益能力' },
+        { label: '年化收益', key: 'annualized_return', suffix: '%', higher: true, group: '收益能力' },
+        { label: '夏普比率', key: 'sharpe_ratio', suffix: '', higher: true, group: '风险收益' },
+        { label: '最大回撤', key: 'max_drawdown', suffix: '%', higher: false, group: '风险控制', invert: true },
+        { label: '波动率', key: 'volatility', suffix: '%', higher: false, group: '风险控制', invert: true },
+        { label: '胜率', key: 'win_rate', suffix: '%', higher: true, group: '稳定性' },
+    ];
+
+    let currentGroup = '';
+    let html = '';
+
+    rows.forEach(row => {
+        if (row.group !== currentGroup) {
+            if (currentGroup !== '') {
+                html += '</tbody></table></div>';
+            }
+            currentGroup = row.group;
+            html += `
+                <div class="indicator-group">
+                    <div class="indicator-group-title"><i class="fas fa-chart-bar me-2"></i>${row.group}</div>
+                    <table class="table compare-table">
+                        <tbody>
+            `;
+        }
+
+        const values = compareFunds.map(f => allMetrics[f.code]?.[row.key] || 0);
+        const bestValue = row.higher ? Math.max(...values) : Math.min(...values);
+
+        html += `<tr><td style="width: 150px;"><strong>${row.label}</strong></td>`;
+        compareFunds.forEach((fund, idx) => {
+            const value = values[idx];
+            const isBest = value === bestValue && value !== 0;
+            const cellClass = isBest ? 'winner-cell' : '';
+            const prefix = row.invert && value > 0 ? '-' : (value >= 0 && row.suffix === '%' ? '+' : '');
+            html += `<td class="${cellClass}">${prefix}${value.toFixed(2)}${row.suffix}</td>`;
+        });
+        html += '</tr>';
+    });
+
+    if (currentGroup) {
+        html += '</tbody></table></div>';
+    }
+
+    $('#compare-tbody').html(html);
+}
+
+function updateBarCharts() {
+    const colors = ['#4fd9a0', '#4fb3ff', '#ff6b6b', '#ffd93d', '#a66cff'];
+
+    const returnData = compareFunds.map((f, i) => ({
+        value: allMetrics[f.code]?.total_return || 0,
+        itemStyle: { color: colors[i] }
+    }));
+
+    const returnOption = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                const p = params[0];
+                return `${p.name}<br/>收益: <strong style="color:${p.value >= 0 ? '#4fd9a0' : '#ff6b6b'}">${p.value >= 0 ? '+' : ''}${p.value.toFixed(2)}%</strong>`;
+            }
+        },
+        grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: compareFunds.map(f => f.name),
+            axisLabel: { color: '#888', rotate: 15 }
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#888', formatter: '{value}%' },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } }
+        },
+        series: [{
+            type: 'bar',
+            data: returnData,
+            barWidth: '50%'
+        }]
+    };
+
+    returnBarChart.setOption(returnOption, true);
+
+    const riskData = compareFunds.map((f, i) => ({
+        value: allMetrics[f.code]?.max_drawdown || 0,
+        itemStyle: { color: colors[i] }
+    }));
+
+    const riskOption = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                const p = params[0];
+                return `${p.name}<br/>最大回撤: <strong style="color:#ff6b6b">-${p.value.toFixed(2)}%</strong>`;
+            }
+        },
+        grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: compareFunds.map(f => f.name),
+            axisLabel: { color: '#888', rotate: 15 }
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#888', formatter: '{value}%' },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } }
+        },
+        series: [{
+            type: 'bar',
+            data: riskData,
+            barWidth: '50%',
+            itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: '#ff6b6b' },
+                { offset: 1, color: '#ff6b6b66' }
+            ]) }
+        }]
+    };
+
+    riskBarChart.setOption(riskOption, true);
+}
+
+function showToast(msg) {
+    const toast = $(`<div class="toast-notification">${msg}</div>`);
+    toast.css({
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        background: 'rgba(220, 53, 69, 0.9)',
+        color: 'white',
+        padding: '1rem 1.5rem',
+        borderRadius: '8px',
+        zIndex: 9999,
+        animation: 'slideIn 0.3s ease'
+    });
+    $('body').append(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+$(document).ready(function() {
+    initChart();
+
+    $('#fund-search').on('keyup', function(e) {
+        if (e.key === 'Enter') {
+            const keyword = $(this).val().trim();
+            if (keyword) {
+                $.ajax({
+                    url: `/fund/api/search?keyword=${encodeURIComponent(keyword)}`,
+                    success: function(response) {
+                        if (response.success && response.data.length > 0) {
+                            let html = '<div class="list-group mt-2">';
+                            response.data.slice(0, 5).forEach(fund => {
+                                html += `<a href="#" class="list-group-item list-group-item-action bg-dark text-light border-secondary" onclick="addFund('${fund.fund_code}', '${fund.fund_name}'); $('#search-results').html(''); return false;">
+                                    <div class="d-flex justify-content-between">
+                                        <span>${fund.fund_name}</span>
+                                        <small class="text-muted">${fund.fund_code}</small>
+                                    </div>
+                                </a>`;
+                            });
+                            html += '</div>';
+                            $('#search-results').html(html);
+                        } else {
+                            $('#search-results').html('<div class="alert alert-warning mt-2 py-2">未找到匹配的基金</div>');
+                        }
+                    }
+                });
+            }
+        }
+    });
+
+    $('#period-select, #index-select').on('change', updateChart);
+
+    $('#compareTabs a').on('shown.bs.tab', function() {
+        setTimeout(() => {
+            radarChart.resize();
+            returnBarChart.resize();
+            riskBarChart.resize();
+        }, 100);
+    });
+});
+</script>
+<style>
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}用户注册 - 智能量化交易终端{% endblock %}
+
+{% block extra_css %}
+<style>
+.auth-container { min-height: calc(100vh - 200px); display: flex; align-items: center; justify-content: center; }
+.auth-card { background: rgba(28, 34, 43, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); animation: slideUp 0.6s ease-out; max-width: 440px; width: 100%; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.auth-header { background: linear-gradient(135deg, rgba(31, 193, 139, 0.2) 0%, rgba(79, 179, 255, 0.1) 100%); padding: 2.5rem 2rem; text-align: center; }
+.auth-icon { width: 70px; height: 70px; background: linear-gradient(135deg, var(--accent-green), #4fd9a0); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; box-shadow: 0 10px 30px rgba(31, 193, 139, 0.4); }
+.auth-icon i { font-size: 1.8rem; color: white; }
+.auth-title { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.auth-subtitle { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.5rem; }
+.auth-body { padding: 2rem; }
+.form-floating { margin-bottom: 1.25rem; }
+.form-floating > .form-control { background: rgba(24, 29, 37, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; height: 56px; padding: 1rem; color: var(--text-primary); transition: all 0.3s ease; }
+.form-floating > .form-control:focus { background: rgba(24, 29, 37, 0.95); border-color: var(--accent-green); box-shadow: 0 0 0 3px rgba(31, 193, 139, 0.15); }
+.form-floating > label { color: var(--text-secondary); padding: 1.1rem 1rem; }
+.form-floating > .form-control:focus ~ label, .form-floating > .form-control:not(:placeholder-shown) ~ label { color: var(--accent-green); }
+.form-text { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem; }
+.btn-auth { background: linear-gradient(135deg, var(--accent-green) 0%, #4fd9a0 100%); border: none; border-radius: 12px; padding: 0.9rem 2rem; font-weight: 700; font-size: 1rem; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(31, 193, 139, 0.3); }
+.btn-auth:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(31, 193, 139, 0.4); }
+.auth-footer { text-align: center; padding: 1.5rem 2rem 2rem; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.auth-footer p { margin: 0; color: var(--text-secondary); }
+.auth-footer a { color: var(--accent-green); text-decoration: none; font-weight: 600; }
+.invalid-feedback { color: var(--accent-red); font-size: 0.85rem; margin-top: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container auth-container">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-icon"><i class="fas fa-user-plus"></i></div>
+            <h2 class="auth-title">用户注册</h2>
+            <p class="auth-subtitle">加入智能量化交易终端，开启投资之旅</p>
+        </div>
+        <div class="auth-body">
+            <form method="POST" action="{{ url_for('auth.register') }}">
+                {{ form.hidden_tag() }}
+                <div class="form-floating">
+                    {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else ""), id="username", placeholder="请输入用户名") }}
+                    <label for="username"><i class="fas fa-user me-2"></i>用户名</label>
+                    {% if form.username.errors %}<div class="invalid-feedback d-block">{% for error in form.username.errors %}{{ error }}{% endfor %}</div>{% endif %}
+                    <div class="form-text"><i class="fas fa-info-circle"></i>3-30个字符，支持字母、数字、下划线</div>
+                </div>
+                <div class="form-floating">
+                    {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), id="password", placeholder="请输入密码", type="password") }}
+                    <label for="password"><i class="fas fa-key me-2"></i>密码</label>
+                    {% if form.password.errors %}<div class="invalid-feedback d-block">{% for error in form.password.errors %}{{ error }}{% endfor %}</div>{% endif %}
+                    <div class="form-text"><i class="fas fa-shield-alt"></i>至少8个字符</div>
+                </div>
+                <div class="form-floating mb-4">
+                    {{ form.password_confirm(class="form-control" + (" is-invalid" if form.password_confirm.errors else ""), id="password_confirm", placeholder="请再次输入密码", type="password") }}
+                    <label for="password_confirm"><i class="fas fa-lock me-2"></i>确认密码</label>
+                    {% if form.password_confirm.errors %}<div class="invalid-feedback d-block">{% for error in form.password_confirm.errors %}{{ error }}{% endfor %}</div>{% endif %}
+                </div>
+                <button type="submit" class="btn btn-auth w-100"><i class="fas fa-user-check me-2"></i>立即注册</button>
+            </form>
+        </div>
+        <div class="auth-footer"><p>已有账号？ <a href="{{ url_for('auth.login') }}">立即登录</a></p></div>
+    </div>
+</div>
+{% endblock %}

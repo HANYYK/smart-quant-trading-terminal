@@ -1,0 +1,1549 @@
+{% extends "base.html" %}
+
+{% block title %}基金分析 - {{ fund_code }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.fund-header {
+    background: linear-gradient(135deg, rgba(31, 193, 139, 0.1) 0%, rgba(79, 179, 255, 0.05) 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.fund-main-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.fund-name {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+.fund-code {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+.metric-card {
+    background: rgba(28, 34, 43, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+.metric-card:hover {
+    border-color: rgba(31, 193, 139, 0.3);
+    transform: translateY(-2px);
+}
+.metric-card .metric-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+.metric-card .metric-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.metric-card .metric-value.positive { color: var(--accent-green); }
+.metric-card .metric-value.negative { color: var(--accent-red); }
+.chart-card {
+    background: rgba(28, 34, 43, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    overflow: hidden;
+}
+.chart-card .card-header {
+    background: transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1rem 1.25rem;
+}
+.chart-container { height: 350px; }
+.period-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.period-tab {
+    padding: 0.5rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.period-tab:hover { border-color: var(--accent-green); color: var(--accent-green); }
+.period-tab.active {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
+    color: white;
+}
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+.info-item {
+    padding: 1rem;
+    background: rgba(24, 29, 37, 0.5);
+    border-radius: 10px;
+}
+.info-item .label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+.info-item .value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.holdings-table { margin: 0; }
+.holdings-table th {
+    background: rgba(31, 193, 139, 0.1);
+    color: var(--accent-green);
+    font-weight: 600;
+    border: none;
+    padding: 0.8rem 1rem;
+}
+.holdings-table td { border-color: rgba(255, 255, 255, 0.05); padding: 0.8rem 1rem; }
+.holdings-table tbody tr:hover { background: rgba(31, 193, 139, 0.05); }
+.score-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+.nav-tabs {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 1.5rem;
+}
+.nav-tabs .nav-link {
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.75rem 1.5rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+.nav-tabs .nav-link:hover { color: var(--accent-green); border-color: transparent; }
+.nav-tabs .nav-link.active { color: var(--accent-green); border-bottom-color: var(--accent-green); background: transparent; }
+.toast-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(31, 193, 139, 0.9);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    z-index: 9999;
+}
+
+/* New styles for enhanced features */
+.advanced-metric {
+    background: rgba(28, 34, 43, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+.advanced-metric .label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+.advanced-metric .value {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+.advanced-metric .desc {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+.period-return-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+}
+.period-item {
+    background: rgba(24, 29, 37, 0.6);
+    border-radius: 8px;
+    padding: 0.75rem;
+    text-align: center;
+}
+.period-item .period { font-size: 0.75rem; color: var(--text-secondary); }
+.period-item .return { font-size: 1.1rem; font-weight: 700; margin-top: 0.25rem; }
+.period-item .return.positive { color: var(--accent-green); }
+.period-item .return.negative { color: var(--accent-red); }
+.correlation-meter {
+    height: 12px;
+    background: linear-gradient(90deg, #ff4444 0%, #888 50%, #44ff44 100%);
+    border-radius: 6px;
+    position: relative;
+    margin: 1rem 0;
+}
+.correlation-marker {
+    position: absolute;
+    top: -4px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 50%;
+    transform: translateX(-50%);
+    transition: left 0.3s ease;
+}
+.correlation-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+.investment-result {
+    background: rgba(31, 193, 139, 0.1);
+    border: 1px solid rgba(31, 193, 139, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+.investment-result .big-number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent-green);
+}
+.allocation-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.allocation-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.allocation-bar .name {
+    width: 60px;
+    font-size: 0.85rem;
+}
+.allocation-bar .bar {
+    flex: 1;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.allocation-bar .bar .fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+.allocation-bar .percent {
+    width: 50px;
+    text-align: right;
+    font-weight: 600;
+}
+.risk-indicator {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.risk-low { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+.risk-medium { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+.risk-high { background: rgba(244, 67, 54, 0.2); color: #f44336; }
+.tab-content-card {
+    background: rgba(28, 34, 43, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+}
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--accent-green);
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="fund-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <div class="fund-name text-light" id="fund-name">加载中...</div>
+                <div class="fund-code mb-3">基金代码: <span id="fund-code">{{ fund_code }}</span></div>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="fund-main-value text-light" id="fund-value">-</span>
+                    <span class="badge fs-6" id="estimate-change">-</span>
+                </div>
+                <div class="text-muted mt-2">
+                    净值: <span id="net-value">-</span> | 估值更新: <span id="update-time">-</span>
+                </div>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="score-badge bg-success text-white" id="score-badge">-</div>
+                <div class="text-muted mt-2">综合评分</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Basic Metrics Row -->
+    <div class="row mb-4">
+        <div class="col-6 col-md-2">
+            <div class="metric-card">
+                <div class="metric-value positive" id="metric-total-return">-</div>
+                <div class="metric-label">近1年收益</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="metric-card">
+                <div class="metric-value positive" id="metric-annual-return">-</div>
+                <div class="metric-label">年化收益</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="metric-card">
+                <div class="metric-value" id="metric-sharpe">-</div>
+                <div class="metric-label">夏普比率</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="metric-card">
+                <div class="metric-value negative" id="metric-max-dd">-</div>
+                <div class="metric-label">最大回撤</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="metric-card">
+                <div class="metric-value" id="metric-volatility">-</div>
+                <div class="metric-label">波动率</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="metric-card">
+                <div class="metric-value" id="metric-win-rate">-</div>
+                <div class="metric-label">胜率</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-tabs" id="analysisTabs">
+        <li class="nav-item">
+            <a class="nav-link active" data-bs-toggle="tab" href="#nav-chart-tab">净值走势</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#advanced-tab">高级指标</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#period-tab">时段收益</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#compare-tab">收益对比</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#investment-tab">定投模拟</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#correlation-tab">相关性</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#allocation-tab">资产配置</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#info-tab">基金信息</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#holdings-tab">重仓持股</a>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content">
+        <!-- Nav Chart Tab -->
+        <div class="tab-pane fade show active" id="nav-chart-tab">
+            <div class="chart-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-chart-line me-2 text-info"></i>历史净值走势</h5>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="btn-group" role="group">
+                            <input type="radio" class="btn-check" name="chart-type" id="chart-type-nav" value="nav" checked>
+                            <label class="btn btn-outline-primary btn-sm" for="chart-type-nav">单位净值</label>
+                            <input type="radio" class="btn-check" name="chart-type" id="chart-type-acc" value="acc">
+                            <label class="btn btn-outline-primary btn-sm" for="chart-type-acc">累计净值</label>
+                            <input type="radio" class="btn-check" name="chart-type" id="chart-type-candle" value="candle">
+                            <label class="btn btn-outline-primary btn-sm" for="chart-type-candle">K线图</label>
+                        </div>
+                        <div class="period-tabs">
+                            <button class="period-tab" data-days="30">1月</button>
+                            <button class="period-tab" data-days="90">3月</button>
+                            <button class="period-tab active" data-days="180">6月</button>
+                            <button class="period-tab" data-days="365">1年</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="nav-chart" class="chart-container"></div>
+                </div>
+            </div>
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="chart-card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-chart-area me-2 text-success"></i>区间收益分析</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="return-chart" style="height: 250px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="chart-card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-exchange-alt me-2 text-warning"></i>收益统计</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3" id="return-stats">
+                                <div class="col-6">
+                                    <div class="advanced-metric">
+                                        <div class="label">区间最高净值</div>
+                                        <div class="value text-success" id="stat-high">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="advanced-metric">
+                                        <div class="label">区间最低净值</div>
+                                        <div class="value text-danger" id="stat-low">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="advanced-metric">
+                                        <div class="label">日均收益</div>
+                                        <div class="value" id="stat-avg">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="advanced-metric">
+                                        <div class="label">收益标准差</div>
+                                        <div class="value" id="stat-std">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Metrics Tab -->
+        <div class="tab-pane fade" id="advanced-tab">
+            <div class="tab-content-card">
+                <h5 class="mb-4"><i class="fas fa-chart-bar me-2 text-warning"></i>高级业绩指标</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="advanced-metric">
+                            <div class="label">Calmar 比率</div>
+                            <div class="value" id="adv-calmar">-</div>
+                            <div class="desc">年化收益 / 最大回撤，衡量风险调整收益</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">Sortino 比率</div>
+                            <div class="value" id="adv-sortino">-</div>
+                            <div class="desc">只考虑下行风险的夏普比率</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">Alpha (超额收益)</div>
+                            <div class="value" id="adv-alpha">-</div>
+                            <div class="desc">相对于基准的超额收益能力</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">Beta (系统性风险)</div>
+                            <div class="value" id="adv-beta">-</div>
+                            <div class="desc">市场涨跌对基金的影响程度</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="advanced-metric">
+                            <div class="label">信息比率</div>
+                            <div class="value" id="adv-ir">-</div>
+                            <div class="desc">主动管理能力衡量指标</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">跟踪误差</div>
+                            <div class="value" id="adv-te">-</div>
+                            <div class="desc">基金与基准的偏离程度</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">VaR (风险价值)</div>
+                            <div class="value" id="adv-var">-</div>
+                            <div class="desc">95%置信度下的单日最大损失</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">Omega 比率</div>
+                            <div class="value" id="adv-omega">-</div>
+                            <div class="desc">收益与损失的比率</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <div class="advanced-metric">
+                            <div class="label">下行标准差</div>
+                            <div class="value" id="adv-downside">-</div>
+                            <div class="desc">只考虑负收益的波动率</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="advanced-metric">
+                            <div class="label">条件VaR (CVaR)</div>
+                            <div class="value" id="adv-cvar">-</div>
+                            <div class="desc">极端损失情况下的平均损失</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="advanced-metric">
+                            <div class="label">尾部比率</div>
+                            <div class="value" id="adv-tail">-</div>
+                            <div class="desc">正收益与负收益尾部比</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 p-3" style="background: rgba(24, 29, 37, 0.5); border-radius: 12px;">
+                    <h6 class="text-info mb-3"><i class="fas fa-lightbulb me-2"></i>指标解读</h6>
+                    <ul class="mb-0 small" id="metrics-interpretation">
+                        <li>加载中...</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Period Returns Tab -->
+        <div class="tab-pane fade" id="period-tab">
+            <div class="tab-content-card">
+                <h5 class="mb-4"><i class="fas fa-clock me-2 text-primary"></i>多时段收益分析</h5>
+                <div class="period-return-grid mb-4" id="short-period-returns">
+                    <div class="period-item">
+                        <div class="period">近1周</div>
+                        <div class="return" id="pr-1w">-</div>
+                    </div>
+                    <div class="period-item">
+                        <div class="period">近1月</div>
+                        <div class="return" id="pr-1m">-</div>
+                    </div>
+                    <div class="period-item">
+                        <div class="period">近3月</div>
+                        <div class="return" id="pr-3m">-</div>
+                    </div>
+                    <div class="period-item">
+                        <div class="period">近6月</div>
+                        <div class="return" id="pr-6m">-</div>
+                    </div>
+                </div>
+                <div class="period-return-grid mb-4" id="long-period-returns">
+                    <div class="period-item">
+                        <div class="period">近1年</div>
+                        <div class="return" id="pr-1y">-</div>
+                    </div>
+                    <div class="period-item">
+                        <div class="period">近2年</div>
+                        <div class="return" id="pr-2y">-</div>
+                    </div>
+                    <div class="period-item">
+                        <div class="period">近3年</div>
+                        <div class="return" id="pr-3y">-</div>
+                    </div>
+                    <div class="period-item">
+                        <div class="period">近5年</div>
+                        <div class="return" id="pr-5y">-</div>
+                    </div>
+                </div>
+                <div class="row mt-4" id="year-returns">
+                    <div class="col-md-6">
+                        <div class="advanced-metric">
+                            <div class="label">今年以来</div>
+                            <div class="value" id="pr-this-year">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="advanced-metric">
+                            <div class="label">去年收益</div>
+                            <div class="value" id="pr-last-year">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compare Tab -->
+        <div class="tab-pane fade" id="compare-tab">
+            <div class="chart-card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-area me-2 text-warning"></i>收益对比</h5>
+                </div>
+                <div class="card-body">
+                    <div id="compare-chart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Investment Simulation Tab -->
+        <div class="tab-pane fade" id="investment-tab">
+            <div class="tab-content-card">
+                <h5 class="mb-4"><i class="fas fa-piggy-bank me-2 text-success"></i>定投收益模拟器</h5>
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <label class="form-label">每月定投金额 (元)</label>
+                        <input type="number" class="form-control" id="monthly-amount" value="1000" min="100" max="100000">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-primary w-100" id="simulate-btn">
+                            <i class="fas fa-calculator me-2"></i>开始模拟
+                        </button>
+                    </div>
+                </div>
+                <div id="investment-results">
+                    <div class="text-center text-muted py-5">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-3">点击"开始模拟"计算定投收益</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Correlation Tab -->
+        <div class="tab-pane fade" id="correlation-tab">
+            <div class="tab-content-card">
+                <h5 class="mb-4"><i class="fas fa-link me-2 text-info"></i>与指数相关性分析</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="advanced-metric">
+                            <div class="label">相关系数</div>
+                            <div class="value" id="corr-coefficient">-</div>
+                            <div class="desc" id="corr-interpretation">-</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">R² (决定系数)</div>
+                            <div class="value" id="corr-r2">-</div>
+                            <div class="desc">市场波动对基金收益的解释程度</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="advanced-metric">
+                            <div class="label">基金收益</div>
+                            <div class="value" id="corr-fund-ret">-</div>
+                            <div class="desc">区间内基金总收益</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">指数收益</div>
+                            <div class="value" id="corr-index-ret">-</div>
+                            <div class="desc">区间内沪深300收益</div>
+                        </div>
+                        <div class="advanced-metric">
+                            <div class="label">超额收益</div>
+                            <div class="value" id="corr-excess">-</div>
+                            <div class="desc">基金相对于指数的超额回报</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <div class="text-muted mb-2">相关性刻度</div>
+                    <div class="correlation-meter">
+                        <div class="correlation-marker" id="corr-marker" style="left: 50%;"></div>
+                    </div>
+                    <div class="correlation-labels">
+                        <span>-1 (负相关)</span>
+                        <span>0 (无相关)</span>
+                        <span>+1 (正相关)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Allocation Tab -->
+        <div class="tab-pane fade" id="allocation-tab">
+            <div class="tab-content-card">
+                <h5 class="mb-4"><i class="fas fa-chart-pie me-2 text-danger"></i>资产配置分析</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div id="allocation-chart" style="height: 300px;"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="allocation-chart" id="allocation-bars">
+                            <div class="allocation-bar">
+                                <div class="name">股票</div>
+                                <div class="bar"><div class="fill" id="alloc-stock" style="width: 0%; background: #4fd9a0;"></div></div>
+                                <div class="percent" id="alloc-stock-pct">0%</div>
+                            </div>
+                            <div class="allocation-bar">
+                                <div class="name">债券</div>
+                                <div class="bar"><div class="fill" id="alloc-bond" style="width: 0%; background: #4fb3ff;"></div></div>
+                                <div class="percent" id="alloc-bond-pct">0%</div>
+                            </div>
+                            <div class="allocation-bar">
+                                <div class="name">现金</div>
+                                <div class="bar"><div class="fill" id="alloc-cash" style="width: 0%; background: #ffd93d;"></div></div>
+                                <div class="percent" id="alloc-cash-pct">0%</div>
+                            </div>
+                            <div class="allocation-bar">
+                                <div class="name">其他</div>
+                                <div class="bar"><div class="fill" id="alloc-other" style="width: 0%; background: #a66cff;"></div></div>
+                                <div class="percent" id="alloc-other-pct">0%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Tab -->
+        <div class="tab-pane fade" id="info-tab">
+            <div class="tab-content-card">
+                <h5 class="mb-4"><i class="fas fa-info-circle me-2 text-success"></i>基金详细信息</h5>
+                <div class="row mb-4" id="risk-info">
+                    <div class="col-md-4">
+                        <div class="advanced-metric">
+                            <div class="label">风险等级</div>
+                            <div class="value"><span class="risk-indicator" id="risk-level">-</span></div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="advanced-metric">
+                            <div class="label">风险描述</div>
+                            <div class="desc" id="risk-desc">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="advanced-metric">
+                            <div class="label">基金类型</div>
+                            <div class="value" id="info-type">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="info-grid" id="fund-info">
+                    <div class="info-item"><div class="label">成立日期</div><div class="value">-</div></div>
+                    <div class="info-item"><div class="label">基金经理</div><div class="value">-</div></div>
+                    <div class="info-item"><div class="label">基金规模</div><div class="value">-</div></div>
+                    <div class="info-item"><div class="label">管理费率</div><div class="value">-</div></div>
+                    <div class="info-item"><div class="label">备案机构</div><div class="value">-</div></div>
+                    <div class="info-item"><div class="label">风险等级</div><div class="value">-</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Holdings Tab -->
+        <div class="tab-pane fade" id="holdings-tab">
+            <div class="chart-card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-piggy-bank me-2 text-danger"></i>重仓持股</h5>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table holdings-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>排名</th>
+                                <th>股票代码</th>
+                                <th>股票名称</th>
+                                <th>持股数量</th>
+                                <th>持仓市值</th>
+                                <th>占净值比</th>
+                            </tr>
+                        </thead>
+                        <tbody id="holdings-body">
+                            <tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script>
+const fundCode = '{{ fund_code }}';
+let navChart, compareChart, allocationChart, returnChart;
+let currentDays = 180;
+let currentChartType = 'nav';
+let fundHistoryCache = [];
+
+function initCharts() {
+    navChart = echarts.init(document.getElementById('nav-chart'));
+    compareChart = echarts.init(document.getElementById('compare-chart'));
+    allocationChart = echarts.init(document.getElementById('allocation-chart'));
+    returnChart = echarts.init(document.getElementById('return-chart'));
+    window.addEventListener('resize', () => {
+        navChart.resize();
+        compareChart.resize();
+        allocationChart.resize();
+        returnChart.resize();
+    });
+}
+
+function loadAllData() {
+    loadRealtimeData();
+    loadBasicMetrics();
+    loadHistoryData(currentDays);
+    loadAdvancedMetrics();
+    loadPeriodReturns();
+    loadHoldingsData();
+    loadFundInfo();
+    loadAllocation();
+    loadCorrelation();
+    initInvestmentSimulation();
+}
+
+function loadRealtimeData() {
+    $.ajax({
+        url: `/fund/api/realtime/${fundCode}`,
+        success: function(response) {
+            if (response.success) {
+                const data = response.data;
+                $('#fund-name').text(data.fund_name);
+                $('#fund-value').text(data.estimate_value.toFixed(4));
+                $('#net-value').text(data.net_value.toFixed(4));
+                $('#update-time').text(data.update_date);
+
+                const changeClass = data.estimate_change >= 0 ? 'bg-danger' : 'bg-success';
+                const arrow = data.estimate_change >= 0 ? '▲' : '▼';
+                $('#estimate-change').attr('class', 'badge fs-6 ' + changeClass);
+                $('#estimate-change').text(arrow + ' ' + Math.abs(data.estimate_change).toFixed(2) + '%');
+            }
+        }
+    });
+}
+
+function loadBasicMetrics() {
+    $.ajax({
+        url: `/fund/api/performance/${fundCode}?days=365`,
+        success: function(response) {
+            if (response.success) {
+                const p = response.data;
+                updateMetric('#metric-total-return', p.total_return, '%', true);
+                updateMetric('#metric-annual-return', p.annualized_return, '%', true);
+                updateMetric('#metric-sharpe', p.sharpe_ratio, '', false);
+                updateMetric('#metric-max-dd', -p.max_drawdown, '%', false, true);
+                updateMetric('#metric-volatility', p.volatility, '%', false);
+                updateMetric('#metric-win-rate', p.win_rate, '%', false);
+
+                const score = calculateScore(p);
+                $('#score-badge').text(score).removeClass('bg-success bg-warning bg-danger')
+                    .addClass(score >= 70 ? 'bg-success' : score >= 50 ? 'bg-warning' : 'bg-danger');
+            }
+        }
+    });
+}
+
+function updateMetric(selector, value, suffix, showSign = false, invertColor = false) {
+    const el = $(selector);
+    let text = showSign ? (value >= 0 ? '+' : '') + value.toFixed(2) + suffix : value.toFixed(2) + suffix;
+    el.text(text);
+
+    const isPositive = value >= 0;
+    el.removeClass('positive negative');
+
+    if (invertColor) {
+        el.addClass(isPositive ? 'negative' : 'positive');
+    } else {
+        el.addClass(isPositive ? 'positive' : 'negative');
+    }
+}
+
+function calculateScore(perf) {
+    let score = 50;
+    if (perf.total_return > 0) score += Math.min(20, perf.total_return / 5);
+    if (perf.sharpe_ratio > 1) score += Math.min(15, perf.sharpe_ratio * 5);
+    if (perf.max_drawdown < 20) score += Math.min(10, (20 - perf.max_drawdown) / 2);
+    if (perf.win_rate > 50) score += Math.min(5, (perf.win_rate - 50) / 10);
+    return Math.round(Math.max(0, Math.min(100, score)));
+}
+
+function loadAdvancedMetrics() {
+    $.ajax({
+        url: `/fund/api/advanced-metrics/${fundCode}?days=365`,
+        success: function(response) {
+            if (response.success) {
+                const m = response.data;
+                $('#adv-calmar').text(m.calmar_ratio.toFixed(2));
+                $('#adv-sortino').text(m.sortino_ratio.toFixed(2));
+                $('#adv-alpha').text((m.alpha >= 0 ? '+' : '') + m.alpha.toFixed(2) + '%');
+                $('#adv-alpha').css('color', m.alpha >= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
+                $('#adv-beta').text(m.beta.toFixed(2));
+                $('#adv-ir').text(m.information_ratio.toFixed(2));
+                $('#adv-te').text(m.tracking_error.toFixed(2) + '%');
+                $('#adv-var').text('-' + m.value_at_risk.toFixed(2) + '%');
+                $('#adv-omega').text(m.omega_ratio.toFixed(2));
+                $('#adv-downside').text(m.downside_deviation.toFixed(2) + '%');
+                $('#adv-cvar').text('-' + m.conditional_var.toFixed(2) + '%');
+                $('#adv-tail').text(m.tail_ratio.toFixed(2));
+
+                generateInterpretation(m);
+            }
+        }
+    });
+}
+
+function generateInterpretation(m) {
+    const points = [];
+    if (m.sharpe_ratio >= 1.5) points.push('夏普比率优秀(<span class="text-success">优秀</span>)，风险调整收益表现出色');
+    else if (m.sharpe_ratio >= 1) points.push('夏普比率良好(<span class="text-info">良好</span>)，风险收益比合理');
+    else if (m.sharpe_ratio > 0) points.push('夏普比率一般(<span class="text-warning">一般</span>)，建议谨慎评估');
+
+    if (m.beta > 1.3) points.push('Beta值较高(<span class="text-warning">' + m.beta + '</span>)，市场波动对基金影响较大');
+    else if (m.beta >= 0.8 && m.beta <= 1.2) points.push('Beta接近1(<span class="text-success">' + m.beta + '</span>)，与市场同步性好');
+    else if (m.beta < 0.8) points.push('Beta值较低(<span class="text-info">' + m.beta + '</span>)，抗跌性较强');
+
+    if (m.alpha > 5) points.push('Alpha显著为正(<span class="text-success">+' + m.alpha + '%</span>)，具有明显超额收益能力');
+    else if (m.alpha > 0) points.push('Alpha为正(<span class="text-info">+' + m.alpha + '%</span>)，跑赢基准');
+
+    if (m.max_drawdown > 30) points.push('最大回撤较大(<span class="text-danger">-' + m.max_drawdown.toFixed(1) + '%</span>)，需关注风险');
+    else if (m.max_drawdown < 15) points.push('最大回撤控制良好(<span class="text-success">-' + m.max_drawdown.toFixed(1) + '%</span>)');
+
+    if (m.omega_ratio > 1.5) points.push('Omega比率优秀(<span class="text-success">' + m.omega_ratio + '</span>)，收益优势明显');
+    else if (m.omega_ratio > 1) points.push('Omega比率大于1(<span class="text-info">' + m.omega_ratio + '</span>)，整体收益大于损失');
+
+    let html = points.map(p => `<li>${p}</li>`).join('');
+    $('#metrics-interpretation').html(html || '<li>数据不足，无法生成解读</li>');
+}
+
+function loadPeriodReturns() {
+    $.ajax({
+        url: `/fund/api/period-returns/${fundCode}`,
+        success: function(response) {
+            if (response.success) {
+                const pr = response.data;
+                updatePeriodReturn('#pr-1w', pr['1w']);
+                updatePeriodReturn('#pr-1m', pr['1m']);
+                updatePeriodReturn('#pr-3m', pr['3m']);
+                updatePeriodReturn('#pr-6m', pr['6m']);
+                updatePeriodReturn('#pr-1y', pr['1y']);
+                updatePeriodReturn('#pr-2y', pr['2y']);
+                updatePeriodReturn('#pr-3y', pr['3y']);
+                updatePeriodReturn('#pr-5y', pr['5y']);
+
+                if (pr.since_year) {
+                    updatePeriodReturn('#pr-this-year', pr.since_year.this_year?.return);
+                    updatePeriodReturn('#pr-last-year', pr.since_year.last_year?.return);
+                }
+            }
+        }
+    });
+}
+
+function updatePeriodReturn(selector, value) {
+    const el = $(selector);
+    if (value !== undefined && value !== null) {
+        el.text((value >= 0 ? '+' : '') + value.toFixed(2) + '%');
+        el.removeClass('positive negative');
+        el.addClass(value >= 0 ? 'positive' : 'negative');
+    } else {
+        el.text('无数据');
+        el.removeClass('positive negative');
+    }
+}
+
+function loadHistoryData(days) {
+    currentDays = days;
+    $.ajax({
+        url: `/fund/api/history/${fundCode}?days=${days}`,
+        success: function(response) {
+            if (response.success && response.data.length > 0) {
+                fundHistoryCache = response.data;
+                renderNavChart(response.data);
+                loadIndexData(days);
+                updateReturnStats(response.data);
+                renderReturnChart(response.data);
+            }
+        }
+    });
+}
+
+function renderNavChart(data) {
+    const dates = data.map(item => item.date);
+    const navValues = data.map(item => item.net_value);
+    const accValues = data.map(item => item.累计净值 || item.net_value);
+
+    const baseValue = navValues[0];
+    const changePcts = navValues.map(v => ((v - baseValue) / baseValue * 100).toFixed(2));
+
+    if (currentChartType === 'candle') {
+        renderCandlestickChart(data);
+    } else if (currentChartType === 'acc') {
+        renderAccNavChart(dates, accValues, changePcts);
+    } else {
+        renderNavLineChart(dates, navValues, changePcts);
+    }
+}
+
+function renderNavLineChart(dates, navValues, changePcts) {
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                const idx = params[0].dataIndex;
+                return `${params[0].name}<br/>净值: ${navValues[idx]}<br/>涨跌: ${changePcts[idx]}%`;
+            }
+        },
+        legend: { data: ['单位净值'], textStyle: { color: '#999' } },
+        grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
+        xAxis: {
+            type: 'category', data: dates, boundaryGap: false,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', rotate: 45 }
+        },
+        yAxis: {
+            type: 'value', scale: true,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888' }
+        },
+        dataZoom: [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100 }
+        ],
+        series: [{
+            name: '单位净值', type: 'line', data: navValues, smooth: true,
+            lineStyle: { color: '#4fd9a0', width: 2 },
+            areaStyle: {
+                color: {
+                    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [
+                        { offset: 0, color: 'rgba(79, 217, 160, 0.3)' },
+                        { offset: 1, color: 'rgba(79, 217, 160, 0.05)' }
+                    ]
+                }
+            },
+            symbol: 'circle', symbolSize: 4
+        }]
+    };
+    navChart.setOption(option);
+}
+
+function renderAccNavChart(dates, accValues, changePcts) {
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                const idx = params[0].dataIndex;
+                return `${params[0].name}<br/>累计净值: ${accValues[idx]}<br/>累计涨跌: ${changePcts[idx]}%`;
+            }
+        },
+        legend: { data: ['累计净值'], textStyle: { color: '#999' } },
+        grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
+        xAxis: {
+            type: 'category', data: dates, boundaryGap: false,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', rotate: 45 }
+        },
+        yAxis: {
+            type: 'value', scale: true,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888' }
+        },
+        dataZoom: [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100 }
+        ],
+        series: [{
+            name: '累计净值', type: 'line', data: accValues, smooth: true,
+            lineStyle: { color: '#4fb3ff', width: 2 },
+            areaStyle: {
+                color: {
+                    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [
+                        { offset: 0, color: 'rgba(79, 179, 255, 0.3)' },
+                        { offset: 1, color: 'rgba(79, 179, 255, 0.05)' }
+                    ]
+                }
+            },
+            symbol: 'circle', symbolSize: 4
+        }]
+    };
+    navChart.setOption(option);
+}
+
+function renderCandlestickChart(data) {
+    if (data.length < 20) {
+        navChart.setOption({
+            title: { text: '数据不足，无法显示K线图', left: 'center', top: 'center', textStyle: { color: '#999', fontSize: 14 } },
+            series: []
+        });
+        return;
+    }
+
+    const dates = data.map(item => item.date);
+    const ohlcData = [];
+
+    for (let i = 5; i < data.length; i++) {
+        const slice = data.slice(Math.max(0, i - 5), i + 1);
+        const opens = slice.map(d => d.net_value);
+        const high = Math.max(...slice.map(d => d.net_value));
+        const low = Math.min(...slice.map(d => d.net_value));
+        const close = slice[slice.length - 1].net_value;
+
+        ohlcData.push([opens[0], high, low, close]);
+    }
+
+    const candleDates = dates.slice(5);
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                if (params[0] && params[0].data) {
+                    const d = params[0].data;
+                    return `${params[0].name}<br/>
+                        <span style="color:#4fd9a0">开盘: ${d[0].toFixed(4)}</span><br/>
+                        <span style="color:#f44336">最高: ${d[1].toFixed(4)}</span><br/>
+                        <span style="color:#4caf50">最低: ${d[2].toFixed(4)}</span><br/>
+                        <span style="color:#2196f3">收盘: ${d[3].toFixed(4)}</span>`;
+                }
+                return '';
+            }
+        },
+        legend: { data: ['基金净值(K线)'], textStyle: { color: '#999' }, top: 10 },
+        grid: { left: '3%', right: '4%', bottom: '20%', top: '15%', containLabel: true },
+        xAxis: {
+            type: 'category', data: candleDates, boundaryGap: true,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', rotate: 45 }
+        },
+        yAxis: {
+            type: 'value', scale: true,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888' }
+        },
+        dataZoom: [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100 }
+        ],
+        series: [{
+            name: '基金净值',
+            type: 'candlestick',
+            data: ohlcData,
+            itemStyle: {
+                color: '#f44336',
+                color0: '#4caf50',
+                borderColor: '#f44336',
+                borderColor0: '#4caf50'
+            }
+        }]
+    };
+    navChart.setOption(option);
+}
+
+function updateReturnStats(data) {
+    if (data.length === 0) return;
+
+    const navValues = data.map(item => item.net_value);
+    const maxNav = Math.max(...navValues);
+    const minNav = Math.min(...navValues);
+
+    const returns = [];
+    for (let i = 1; i < navValues.length; i++) {
+        if (navValues[i-1] > 0) {
+            returns.push((navValues[i] - navValues[i-1]) / navValues[i-1]);
+        }
+    }
+
+    const avgReturn = returns.length > 0 ? (returns.reduce((a, b) => a + b, 0) / returns.length * 100) : 0;
+    const stdReturn = returns.length > 1 ? Math.sqrt(returns.reduce((sq, n) => sq + Math.pow(n - avgReturn/100, 2), 0) / (returns.length - 1) * 100) : 0;
+
+    $('#stat-high').text(maxNav.toFixed(4));
+    $('#stat-low').text(minNav.toFixed(4));
+
+    const avgColor = avgReturn >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    const stdColor = stdReturn > 5 ? 'var(--accent-red)' : 'var(--accent-yellow)';
+    $('#stat-avg').html(`<span style="color:${avgColor}">${avgReturn >= 0 ? '+' : ''}${avgReturn.toFixed(4)}%</span>`);
+    $('#stat-std').html(`<span style="color:${stdColor}">${stdReturn.toFixed(4)}%</span>`);
+}
+
+function renderReturnChart(data) {
+    if (data.length < 2) {
+        return;
+    }
+
+    const navValues = data.map(item => item.net_value);
+    const baseValue = navValues[0];
+    const cumulativeReturns = navValues.map(v => ((v - baseValue) / baseValue * 100));
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                const idx = params[0].dataIndex;
+                const date = data[idx]?.date || '';
+                return `${date}<br/>累计收益: <strong style="color:${cumulativeReturns[idx] >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${cumulativeReturns[idx] >= 0 ? '+' : ''}${cumulativeReturns[idx].toFixed(2)}%</strong>`;
+            }
+        },
+        grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: data.map(item => item.date),
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', show: false }
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', formatter: '{value}%' },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } }
+        },
+        series: [{
+            type: 'bar',
+            data: cumulativeReturns.map(v => ({
+                value: v,
+                itemStyle: { color: v >= 0 ? 'rgba(31, 193, 139, 0.7)' : 'rgba(240, 93, 94, 0.7)' }
+            })),
+            barWidth: '60%'
+        }]
+    };
+    returnChart.setOption(option);
+}
+
+function loadIndexData(days) {
+    $.ajax({
+        url: `/fund/api/index/000300?days=${days}`,
+        success: function(response) {
+            if (response.success) {
+                renderCompareChart(response.data);
+            }
+        }
+    });
+}
+
+function renderCompareChart(indexData) {
+    const dates = indexData.map(item => item.date);
+    const fundValues = [];
+    const indexValues = indexData.map(item => item.change_pct);
+
+    if (fundHistoryCache.length > 0) {
+        const baseValue = fundHistoryCache[0].net_value;
+        fundHistoryCache.forEach(item => {
+            const pct = ((item.net_value - baseValue) / baseValue * 100).toFixed(2);
+            const matchingDate = dates.find(d => d === item.date);
+            if (matchingDate) {
+                fundValues[dates.indexOf(matchingDate)] = parseFloat(pct);
+            }
+        });
+    }
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' }
+        },
+        legend: { data: ['本基金', '沪深300'], textStyle: { color: '#999' }, top: 10 },
+        grid: { left: '3%', right: '4%', bottom: '15%', top: '20%', containLabel: true },
+        xAxis: {
+            type: 'category', data: dates, boundaryGap: false,
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', rotate: 45 }
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#888', formatter: '{value}%' }
+        },
+        series: [
+            {
+                name: '本基金', type: 'line', data: fundValues, smooth: true,
+                lineStyle: { color: '#4fd9a0', width: 2 },
+                showSymbol: false
+            },
+            {
+                name: '沪深300', type: 'line', data: indexValues, smooth: true,
+                lineStyle: { color: '#4fb3ff', width: 2, type: 'dashed' },
+                showSymbol: false
+            }
+        ]
+    };
+    compareChart.setOption(option);
+}
+
+function initInvestmentSimulation() {
+    $('#simulate-btn').on('click', function() {
+        const amount = parseFloat($('#monthly-amount').val()) || 1000;
+        $.ajax({
+            url: `/fund/api/fixed-investment/${fundCode}?amount=${amount}`,
+            beforeSend: function() {
+                $('#investment-results').html('<div class="text-center py-5"><div class="loading-spinner mx-auto mb-3"></div>计算中...</div>');
+            },
+            success: function(response) {
+                if (response.success) {
+                    renderInvestmentResults(response.data, amount);
+                } else {
+                    $('#investment-results').html('<div class="alert alert-warning">模拟失败: ' + response.error + '</div>');
+                }
+            },
+            error: function() {
+                $('#investment-results').html('<div class="alert alert-danger">请求失败，请重试</div>');
+            }
+        });
+    });
+}
+
+function renderInvestmentResults(data, monthlyAmount) {
+    const profitColor = data.total_profit >= 0 ? 'text-success' : 'text-danger';
+    const html = `
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="text-center">
+                    <div class="text-muted mb-1">累计投入</div>
+                    <div class="big-number" style="color: var(--accent-blue);">¥${data.total_invested.toLocaleString()}</div>
+                    <div class="text-muted small">${data.months}个月</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <div class="text-muted mb-1">当前价值</div>
+                    <div class="big-number">¥${data.total_value.toLocaleString()}</div>
+                    <div class="text-muted small">${data.total_units.toFixed(2)}份 @ ${data.current_nav.toFixed(4)}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <div class="text-muted mb-1">累计收益</div>
+                    <div class="big-number ${profitColor}">${data.total_profit >= 0 ? '+' : ''}¥${data.total_profit.toLocaleString()}</div>
+                    <div class="text-muted small">${(data.total_profit_rate >= 0 ? '+' : '') + data.total_profit_rate.toFixed(2)}%</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <div class="text-muted mb-1">年化收益</div>
+                    <div class="big-number ${data.annual_return >= 0 ? 'text-success' : 'text-danger'}">${(data.annual_return >= 0 ? '+' : '') + data.annual_return.toFixed(2)}%</div>
+                    <div class="text-muted small">按总收益/年数</div>
+                </div>
+            </div>
+        </div>
+        <div class="investment-result">
+            <h6 class="text-info mb-3"><i class="fas fa-chart-line me-2"></i>定投收益曲线</h6>
+            <div id="investment-chart" style="height: 250px;"></div>
+        </div>
+    `;
+    $('#investment-results').html(html);
+
+    const chart = echarts.init(document.getElementById('investment-chart'));
+    const dates = data.records.map(r => r.date);
+    const invested = data.records.map(r => r.invested);
+    const values = data.records.map(r => r.value);
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(28, 34, 43, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            textStyle: { color: '#fff' },
+            formatter: function(params) {
+                const idx = params[0].dataIndex;
+                const record = data.records[idx];
+                return `${params[0].name}<br/>投入: ¥${record.invested.toLocaleString()}<br/>价值: ¥${record.value.toLocaleString()}<br/>收益: ¥${record.profit.toLocaleString()} (${(record.profit_rate >= 0 ? '+' : '') + record.profit_rate.toFixed(2)}%)`;
+            }
+        },
+        legend: { data: ['累计投入', '账户价值'], textStyle: { color: '#999' } },
+        grid: { left: '3%', right: '4%', bottom: '10%', top: '15%', containLabel: true },
+        xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#444' } }, axisLabel: { color: '#888', rotate: 45 } },
+        yAxis: { type: 'value', axisLine: { lineStyle: { color: '#444' } }, axisLabel: { color: '#888', formatter: '¥{value}' } },
+        series: [
+            { name: '累计投入', type: 'line', data: invested, lineStyle: { color: '#4fb3ff', type: 'dashed' }, showSymbol: false },
+            { name: '账户价值', type: 'line', data: values, lineStyle: { color: '#4fd9a0' }, areaStyle: { color: 'rgba(79, 217, 160, 0.2)' }, showSymbol: false }
+        ]
+    };
+    chart.setOption(option);
+}
+
+function loadCorrelation() {
+    $.ajax({
+        url: `/fund/api/correlation/${fundCode}?index=000300`,
+        success: function(response) {
+            if (response.success) {
+                const c = response.data;
+                $('#corr-coefficient').text(c.correlation.toFixed(3));
+                $('#corr-interpretation').text(c.interpretation);
+                $('#corr-r2').text((c.r_squared * 100).toFixed(1) + '%');
+
+                const fundColor = c.fund_total_return >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                const indexColor = c.index_total_return >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                const excessColor = c.excess_return >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+
+                $('#corr-fund-ret').html('<span style="color:' + fundColor + '">' + (c.fund_total_return >= 0 ? '+' : '') + c.fund_total_return.toFixed(2) + '%</span>');
+                $('#corr-index-ret').html('<span style="color:' + indexColor + '">' + (c.index_total_return >= 0 ? '+' : '') + c.index_total_return.toFixed(2) + '%</span>');
+                $('#corr-excess').html('<span style="color:' + excessColor + '">' + (c.excess_return >= 0 ? '+' : '') + c.excess_return.toFixed(2) + '%</span>');
+
+                const markerPos = ((c.correlation + 1) / 2) * 100;
+                $('#corr-marker').css('left', markerPos + '%');
+            } else {
+                $('#corr-coefficient').text('数据不足');
+            }
+        }
+    });
+}
+
+function loadAllocation() {
+    $.ajax({
+        url: `/fund/api/allocation/${fundCode}`,
+        success: function(response) {
+            if (response.success && response.data.length > 0) {
+                renderAllocationChart(response.data);
+                updateAllocationBars(response.data);
+            }
+        }
+    });
+}
+
+function renderAllocationChart(data) {
+    const typeMap = { '股票': '#4fd9a0', '债券': '#4fb3ff', '现金': '#ffd93d', '其他': '#a66cff', '银行存款': '#ff6b6b' };
+    const chartData = data.map(item => ({
+        name: item.type,
+        value: item.ratio,
+        itemStyle: { color: typeMap[item.type] || '#888' }
+    }));
+
+    const option = {
+        tooltip: { trigger: 'item', formatter: '{b}: {c}%' },
+        legend: { orient: 'vertical', right: '5%', top: 'center', textStyle: { color: '#999' } },
+        series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            center: ['35%', '50%'],
+            avoidLabelOverlap: false,
+            itemStyle: { borderRadius: 8, borderColor: '#1c222b', borderWidth: 2 },
+            label: { show: false },
+            emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
+            data: chartData
+        }]
+    };
+    allocationChart.setOption(option);
+}
+
+function updateAllocationBars(data) {
+    const typeMap = { '股票': 'stock', '债券': 'bond', '现金': 'cash', '其他': 'other', '银行存款': 'other' };
+    data.forEach(item => {
+        const key = typeMap[item.type] || 'other';
+        $('#alloc-' + key).css('width', item.ratio + '%');
+        $('#alloc-' + key + '-pct').text(item.ratio.toFixed(1) + '%');
+    });
+}
+
+function loadHoldingsData() {
+    $.ajax({
+        url: `/fund/api/holdings/${fundCode}`,
+        success: function(response) {
+            if (response.success && response.data.length > 0) {
+                let html = '';
+                response.data.forEach(item => {
+                    html += `<tr>
+                        <td><span class="badge bg-secondary">${item.rank}</span></td>
+                        <td><a href="/stock/detail/${item.stock_code}" class="text-info">${item.stock_code}</a></td>
+                        <td>${item.stock_name}</td>
+                        <td>${item.shares}</td>
+                        <td>${item.value}</td>
+                        <td><span class="text-warning">-</span></td>
+                    </tr>`;
+                });
+                $('#holdings-body').html(html);
+            } else {
+                $('#holdings-body').html('<tr><td colspan="6" class="text-center text-muted py-4">暂无数据</td></tr>');
+            }
+        }
+    });
+}
+
+function loadFundInfo() {
+    $.ajax({
+        url: `/fund/api/info/${fundCode}`,
+        success: function(response) {
+            if (response.success) {
+                const info = response.data;
+                $('#info-type').text(info.fund_type || '-');
+
+                const riskMap = { '低': 'risk-low', '中低': 'risk-medium', '中': 'risk-medium', '中高': 'risk-high', '高': 'risk-high' };
+                const riskClass = riskMap[info.risk_level] || 'risk-medium';
+                $('#risk-level').text(info.risk_level || '-').addClass(riskClass);
+
+                const items = [
+                    { label: '成立日期', value: info.establish_date || '-' },
+                    { label: '基金经理', value: info.manager || '-' },
+                    { label: '基金规模', value: info.fund_scale || '-' },
+                    { label: '管理费率', value: info.fee || '-' },
+                    { label: '备案机构', value: info.registration || '-' },
+                    { label: '风险等级', value: info.risk_level || '-' }
+                ];
+                let html = '';
+                items.forEach(item => {
+                    html += `<div class="info-item"><div class="label">${item.label}</div><div class="value">${item.value}</div></div>`;
+                });
+                $('#fund-info').html(html);
+            }
+        }
+    });
+
+    $.ajax({
+        url: `/fund/api/risk/${fundCode}`,
+        success: function(response) {
+            if (response.success) {
+                $('#risk-level').text(response.data.risk_level || '-');
+                $('#risk-desc').text(response.data.risk_description || '-');
+            }
+        }
+    });
+}
+
+$(document).ready(function() {
+    initCharts();
+    loadAllData();
+
+    $('.period-tab').on('click', function() {
+        $('.period-tab').removeClass('active');
+        $(this).addClass('active');
+        loadHistoryData($(this).data('days'));
+    });
+
+    $('input[name="chart-type"]').on('change', function() {
+        currentChartType = $(this).val();
+        if (fundHistoryCache.length > 0) {
+            renderNavChart(fundHistoryCache);
+        }
+    });
+
+    $('#analysisTabs a').on('shown.bs.tab', function(e) {
+        const target = $(e.target).attr('href');
+        if (target === '#compare-tab') compareChart.resize();
+        if (target === '#allocation-tab') allocationChart.resize();
+        if (target === '#nav-chart-tab') {
+            navChart.resize();
+            returnChart.resize();
+        }
+    });
+});
+</script>
+{% endblock %}

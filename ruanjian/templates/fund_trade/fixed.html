@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+
+{% block title %}定投管理 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Fixed Investment</p>
+            <h1 class="page-title mb-1">定投管理</h1>
+            <p class="text-muted mb-0">设置自动定投计划，每月固定日期自动买入基金。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('fund_trade.index') }}">
+                <i class="fas fa-exchange-alt me-2"></i>去交易
+            </a>
+        </div>
+    </div>
+
+    <!-- 创建定投计划 -->
+    <div class="card terminal-card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-plus-circle me-2 text-success"></i>创建定投计划</h5>
+        </div>
+        <div class="card-body">
+            <form id="create-form" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">基金代码</label>
+                    <input type="text" class="form-control" id="fund-code" placeholder="如: 005827" maxlength="6">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">基金名称</label>
+                    <input type="text" class="form-control" id="fund-name" placeholder="自动获取" readonly>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">每月定投金额(元)</label>
+                    <input type="number" class="form-control" id="amount" placeholder="最低10元" min="10" value="500">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">定投日(1-28)</label>
+                    <input type="number" class="form-control" id="day" min="1" max="28" value="1">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-plus me-2"></i>创建计划
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 定投计划列表 -->
+    <div class="card terminal-card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-list me-2 text-info"></i>我的定投计划</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>基金代码</th>
+                            <th>基金名称</th>
+                            <th>定投金额</th>
+                            <th>定投日</th>
+                            <th>状态</th>
+                            <th>累计投入</th>
+                            <th>累计份额</th>
+                            <th>当前市值</th>
+                            <th>累计收益</th>
+                            <th>收益率</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fixed-tbody">
+                        <tr><td colspan="11" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 结果模态框 -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">操作结果</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="mb-3">
+                    <i class="fas fa-check-circle text-success fa-4x" id="resultIcon"></i>
+                </div>
+                <pre id="resultMessage" class="text-start bg-black p-3 rounded"></pre>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑模态框 -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">编辑定投计划</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="mb-3">
+                    <label class="form-label">基金代码</label>
+                    <input type="text" class="form-control" id="edit-fund-code" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">每月定投金额(元)</label>
+                    <input type="number" class="form-control" id="edit-amount" min="10">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">定投日(1-28)</label>
+                    <input type="number" class="form-control" id="edit-day" min="1" max="28">
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="save-edit-btn">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+    
+    function formatMoney(n) {
+        return (n || 0).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+    
+    function showResult(success, message) {
+        $("#resultIcon").removeClass("fa-check-circle fa-times-circle text-success text-danger")
+                       .addClass(success ? "fa-check-circle text-success" : "fa-times-circle text-danger");
+        $("#resultMessage").text(message);
+        new bootstrap.Modal($("#resultModal")[0]).show();
+    }
+    
+    function loadFixedPlans() {
+        $.get("/fund/trade/api/fixed/list", function(res) {
+            var tb = $("#fixed-tbody");
+            if (res.success && res.data && res.data.length > 0) {
+                tb.empty();
+                res.data.forEach(function(p) {
+                    var statusBadge = "";
+                    if (p.status === "active") {
+                        statusBadge = '<span class="badge bg-success">进行中</span>';
+                    } else if (p.status === "paused") {
+                        statusBadge = '<span class="badge bg-warning">已暂停</span>';
+                    } else {
+                        statusBadge = '<span class="badge bg-secondary">已终止</span>';
+                    }
+                    
+                    var profitClass = p.profit >= 0 ? "text-danger" : "text-success";
+                    var profitSign = p.profit >= 0 ? "+" : "";
+                    
+                    tb.append('<tr>' +
+                        '<td>' + p.fund_code + '</td>' +
+                        '<td>' + p.fund_name + '</td>' +
+                        '<td>' + formatMoney(p.amount) + '</td>' +
+                        '<td>每月' + p.day + '日</td>' +
+                        '<td>' + statusBadge + '</td>' +
+                        '<td>' + formatMoney(p.total_invested) + '</td>' +
+                        '<td>' + p.total_shares.toFixed(2) + '</td>' +
+                        '<td>' + formatMoney(p.current_value) + '</td>' +
+                        '<td class="' + profitClass + '">' + profitSign + formatMoney(p.profit) + '</td>' +
+                        '<td class="' + profitClass + '">' + profitSign + p.profit_rate.toFixed(2) + '%</td>' +
+                        '<td>' +
+                            '<div class="btn-group btn-group-sm">' +
+                                '<button class="btn btn-outline-primary btn-execute" data-id="' + p.id + '" title="立即执行"><i class="fas fa-play"></i></button>' +
+                                '<button class="btn btn-outline-warning btn-edit" data-id="' + p.id + '" data-code="' + p.fund_code + '" data-amount="' + p.amount + '" data-day="' + p.day + '" title="编辑"><i class="fas fa-edit"></i></button>' +
+                                '<button class="btn btn-outline-' + (p.status === "active" ? "warning" : "success") + ' btn-toggle" data-id="' + p.id + '" data-status="' + p.status + '" title="' + (p.status === "active" ? "暂停" : "恢复") + '"><i class="fas ' + (p.status === "active" ? "fa-pause" : "fa-play") + '"></i></button>' +
+                                '<button class="btn btn-outline-danger btn-delete" data-id="' + p.id + '" title="删除"><i class="fas fa-trash"></i></button>' +
+                            '</div>' +
+                        '</td></tr>');
+                });
+            } else {
+                tb.html('<tr><td colspan="11" class="text-center text-muted">暂无定投计划</td></tr>');
+            }
+        });
+    }
+    
+    function lookupFund(code) {
+        if (!code || code.length !== 6) return;
+        $.get("/fund/trade/api/fund/quote/" + code, function(res) {
+            if (res.success) {
+                $("#fund-name").val(res.data.fund.name || code);
+            } else {
+                $("#fund-name").val("");
+            }
+        });
+    }
+    
+    function createPlan() {
+        var code = $("#fund-code").val().trim();
+        var amount = parseFloat($("#amount").val());
+        var day = parseInt($("#day").val());
+        
+        if (!code || code.length !== 6) {
+            showResult(false, "请输入正确的6位基金代码");
+            return;
+        }
+        if (!amount || amount < 10) {
+            showResult(false, "定投金额不能少于10元");
+            return;
+        }
+        if (day < 1 || day > 28) {
+            showResult(false, "定投日必须在1-28之间");
+            return;
+        }
+        
+        $.ajax({
+            url: "/fund/trade/api/fixed/create",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({fund_code: code, amount: amount, day: day}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, res.message);
+                    $("#fund-code, #fund-name").val("");
+                    $("#amount").val(500);
+                    $("#day").val(1);
+                    loadFixedPlans();
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+    
+    function executePlan(planId) {
+        $.ajax({
+            url: "/fund/trade/api/fixed/execute/" + planId,
+            method: "POST",
+            contentType: "application/json",
+            data: "{}",
+            success: function(res) {
+                showResult(res.success, res.message);
+                loadFixedPlans();
+            }
+        });
+    }
+    
+    function togglePlan(planId, currentStatus) {
+        var newStatus = currentStatus === "active" ? "paused" : "active";
+        $.ajax({
+            url: "/fund/trade/api/fixed/" + planId,
+            method: "PUT",
+            contentType: "application/json",
+            data: JSON.stringify({status: newStatus}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, "状态已更新");
+                    loadFixedPlans();
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+    
+    function deletePlan(planId) {
+        if (!confirm("确定要删除这个定投计划吗？")) return;
+        $.ajax({
+            url: "/fund/trade/api/fixed/" + planId,
+            method: "DELETE",
+            success: function(res) {
+                showResult(res.success, res.message);
+                loadFixedPlans();
+            }
+        });
+    }
+    
+    function saveEdit() {
+        var planId = $("#edit-id").val();
+        var amount = parseFloat($("#edit-amount").val());
+        var day = parseInt($("#edit-day").val());
+        
+        if (!amount || amount < 10) {
+            showResult(false, "定投金额不能少于10元");
+            return;
+        }
+        if (day < 1 || day > 28) {
+            showResult(false, "定投日必须在1-28之间");
+            return;
+        }
+        
+        $.ajax({
+            url: "/fund/trade/api/fixed/" + planId,
+            method: "PUT",
+            contentType: "application/json",
+            data: JSON.stringify({amount: amount, day: day}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, "保存成功");
+                    $("#editModal").modal("hide");
+                    loadFixedPlans();
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+    
+    // 事件绑定
+    $("#fund-code").on("blur", function() {
+        lookupFund($(this).val().trim());
+    });
+    
+    $("#create-form").on("submit", function(e) {
+        e.preventDefault();
+        createPlan();
+    });
+    
+    $(document).on("click", ".btn-execute", function() {
+        executePlan($(this).data("id"));
+    });
+    
+    $(document).on("click", ".btn-edit", function() {
+        $("#edit-id").val($(this).data("id"));
+        $("#edit-fund-code").val($(this).data("code"));
+        $("#edit-amount").val($(this).data("amount"));
+        $("#edit-day").val($(this).data("day"));
+        $("#editModal").modal("show");
+    });
+    
+    $(document).on("click", ".btn-toggle", function() {
+        togglePlan($(this).data("id"), $(this).data("status"));
+    });
+    
+    $(document).on("click", ".btn-delete", function() {
+        deletePlan($(this).data("id"));
+    });
+    
+    $("#save-edit-btn").click(saveEdit);
+    
+    // 初始化
+    loadFixedPlans();
+})();
+</script>
+{% endblock %}

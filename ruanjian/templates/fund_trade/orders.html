@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}交易记录 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Trade History</p>
+            <h1 class="page-title mb-1">基金交易记录</h1>
+            <p class="text-muted mb-0">查看所有基金买卖交易历史。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('fund_trade.index') }}">
+                <i class="fas fa-exchange-alt me-2"></i>去交易
+            </a>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="metric-card metric-flat">
+                <span>总交易次数</span>
+                <strong id="total-trades">--</strong>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-flat">
+                <span>累计买入</span>
+                <strong id="total-invested">--</strong>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-up">
+                <span>累计收益</span>
+                <strong id="total-profit">--</strong>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-flat">
+                <span>当前持仓</span>
+                <strong id="position-value">--</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易记录表格 -->
+    <div class="card terminal-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-history me-2 text-info"></i>交易明细</h5>
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-light active" data-filter="all">全部</button>
+                <button class="btn btn-outline-light" data-filter="buy">买入</button>
+                <button class="btn btn-outline-light" data-filter="sell">卖出</button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0" id="trade-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>基金代码</th>
+                            <th>基金名称</th>
+                            <th>类型</th>
+                            <th>金额(元)</th>
+                            <th>份额</th>
+                            <th>净值</th>
+                            <th>手续费</th>
+                            <th>收益</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trade-tbody">
+                        <tr><td colspan="9" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- 分页 -->
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                共 <span id="total-count">0</span> 条记录
+            </div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0" id="pagination">
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+    
+    var currentPage = 1;
+    var pageSize = 20;
+    var currentFilter = "all";
+    
+    function formatMoney(n) {
+        return (n || 0).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+    
+    function loadTrades(page) {
+        var url = "/fund/trade/api/trade/list?page=" + page + "&page_size=" + pageSize;
+        if (currentFilter !== "all") {
+            url += "&action=" + currentFilter;
+        }
+        
+        $.get(url, function(res) {
+            if (res.success) {
+                renderTable(res.data);
+                renderPagination(res.total, res.pages, page);
+                $("#total-count").text(res.total);
+            } else {
+                $("#trade-tbody").html('<tr><td colspan="9" class="text-center text-danger">加载失败</td></tr>');
+            }
+        });
+    }
+    
+    function renderTable(trades) {
+        var tb = $("#trade-tbody");
+        if (!trades || trades.length === 0) {
+            tb.html('<tr><td colspan="9" class="text-center text-muted">暂无交易记录</td></tr>');
+            return;
+        }
+        
+        tb.empty();
+        trades.forEach(function(t) {
+            var actionClass = t.action === "buy" ? "text-danger" : "text-success";
+            var actionText = t.action === "buy" ? "买入" : (t.action === "sell" ? "卖出" : "分红");
+            var actionIcon = t.action === "buy" ? "fa-shopping-cart" : (t.action === "sell" ? "fa-hand-holding-usd" : "fa-gift");
+            var profitHtml = "";
+            
+            if (t.action === "sell" && t.profit !== null && t.profit !== undefined) {
+                var profitClass = t.profit >= 0 ? "text-danger" : "text-success";
+                var profitSign = t.profit >= 0 ? "+" : "";
+                profitHtml = '<span class="' + profitClass + '">' + profitSign + formatMoney(t.profit) + '</span>';
+            } else {
+                profitHtml = '-';
+            }
+            
+            var tradeTypeHtml = t.trade_type === "fixed" ? '<span class="badge bg-success ms-1">定投</span>' : '';
+            
+            tb.append('<tr>' +
+                '<td>' + t.created_at + '</td>' +
+                '<td>' + t.fund_code + '</td>' +
+                '<td>' + t.fund_name + '</td>' +
+                '<td><span class="' + actionClass + '"><i class="fas ' + actionIcon + ' me-1"></i>' + actionText + '</span>' + tradeTypeHtml + '</td>' +
+                '<td>' + formatMoney(t.amount) + '</td>' +
+                '<td>' + t.shares.toFixed(2) + '</td>' +
+                '<td>' + t.nav.toFixed(4) + '</td>' +
+                '<td>' + (t.commission > 0 ? formatMoney(t.commission) : '-') + '</td>' +
+                '<td>' + profitHtml + '</td>' +
+                '</tr>');
+        });
+    }
+    
+    function renderPagination(total, pages, current) {
+        var pag = $("#pagination");
+        pag.empty();
+        
+        if (pages <= 1) return;
+        
+        // 上一页
+        if (current > 1) {
+            pag.append('<li class="page-item"><a class="page-link" href="#" data-page="' + (current - 1) + '">&laquo;</a></li>');
+        }
+        
+        // 页码
+        var start = Math.max(1, current - 2);
+        var end = Math.min(pages, current + 2);
+        
+        if (start > 1) {
+            pag.append('<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>');
+            if (start > 2) pag.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
+        }
+        
+        for (var i = start; i <= end; i++) {
+            var active = i === current ? "active" : "";
+            pag.append('<li class="page-item ' + active + '"><a class="page-link" href="#" data-page="' + i + '">' + i + '</a></li>');
+        }
+        
+        if (end < pages) {
+            if (end < pages - 1) pag.append('<li class="page-item disabled"><span class="page-link">...</span></li>');
+            pag.append('<li class="page-item"><a class="page-link" href="#" data-page="' + pages + '">' + pages + '</a></li>');
+        }
+        
+        // 下一页
+        if (current < pages) {
+            pag.append('<li class="page-item"><a class="page-link" href="#" data-page="' + (current + 1) + '">&raquo;</a></li>');
+        }
+    }
+    
+    function loadSummary() {
+        $.get("/fund/trade/api/summary", function(res) {
+            if (res.success) {
+                var d = res.data;
+                $("#total-trades").text(d.total_trades);
+                $("#total-invested").text(formatMoney(d.total_invested) + " 元");
+                
+                var profitClass = d.total_profit >= 0 ? "metric-up" : "metric-down";
+                var profitSign = d.total_profit >= 0 ? "+" : "";
+                $("#total-profit").removeClass("metric-up metric-down").addClass(profitClass).text(profitSign + formatMoney(d.total_profit) + " 元");
+            }
+        });
+        
+        $.get("/fund/trade/api/account/info", function(res) {
+            if (res.success) {
+                $("#position-value").text(formatMoney(res.data.position_value) + " 元");
+            }
+        });
+    }
+    
+    // 事件绑定
+    $(document).on("click", "#pagination .page-link", function(e) {
+        e.preventDefault();
+        var page = parseInt($(this).data("page"));
+        if (page) {
+            currentPage = page;
+            loadTrades(page);
+        }
+    });
+    
+    $(".btn-group[data-filter] .btn").click(function() {
+        $(".btn-group[data-filter] .btn").removeClass("active");
+        $(this).addClass("active");
+        currentFilter = $(this).data("filter");
+        currentPage = 1;
+        loadTrades(1);
+    });
+    
+    // 初始化
+    loadTrades(1);
+    loadSummary();
+})();
+</script>
+{% endblock %}

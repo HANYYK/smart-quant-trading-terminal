@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+
+{% block title %}行情中心 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">A-Share Market</p>
+            <h1 class="page-title mb-1">全市场行情</h1>
+            <p class="text-muted mb-0">实时排行、市场温度和股票筛选集中在一个工作台。</p>
+        </div>
+        <div class="page-actions">
+            <span class="data-status" id="data-status">
+                <span id="status-text">数据加载中</span>
+            </span>
+            <button class="btn btn-danger" id="refresh-btn" type="button">
+                <i class="fas fa-rotate me-2"></i>刷新行情
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="metric-card metric-up">
+                <span>上涨</span>
+                <strong id="gainers-count">-</strong>
+                <i class="fas fa-caret-up"></i>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-down">
+                <span>下跌</span>
+                <strong id="losers-count">-</strong>
+                <i class="fas fa-caret-down"></i>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-flat">
+                <span>平盘</span>
+                <strong id="unchanged-count">-</strong>
+                <i class="fas fa-minus"></i>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="market-thermometer">
+                <div class="market-temp-value" id="market-temp">--</div>
+                <div class="market-temp-label">市场温度</div>
+                <div class="market-temp-bar">
+                    <div class="market-temp-indicator" id="temp-indicator" style="left: 50%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <div class="card terminal-card ranking-card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-arrow-up me-2 text-danger"></i>涨幅排行 TOP 10
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div id="gainers-list" class="ranking-list">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card terminal-card ranking-card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-arrow-down me-2 text-success"></i>跌幅排行 TOP 10
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div id="losers-list" class="ranking-list">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card terminal-card">
+        <div class="card-header">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list text-info me-2"></i>全市场股票列表
+                    </h5>
+                </div>
+                <div class="col-md-6 mt-3 mt-md-0">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="search-input" placeholder="搜索股票代码或名称...">
+                        <button class="btn btn-outline-light" type="button" id="search-btn">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0" id="stock-table" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>开盘</th>
+                            <th>最高</th>
+                            <th>最低</th>
+                            <th>收盘</th>
+                            <th>成交量</th>
+                            <th>换手率</th>
+                            <th>涨跌幅</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-tbody">
+                        <tr><td colspan="9" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+
+    var stockTable = null;
+
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return "";
+        var div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function renderStockRow(item) {
+        var tr = document.createElement("tr");
+        var changeClass = item.change_percent > 0 ? "text-danger" : item.change_percent < 0 ? "text-success" : "text-muted";
+        var arrow = item.change_percent > 0 ? "▲" : item.change_percent < 0 ? "▼" : "■";
+        tr.innerHTML =
+            "<td><a href='/stock/detail/" + escapeHtml(item.code) + "' class='stock-link text-info'>" + escapeHtml(item.code) + "</a></td>" +
+            "<td>" + escapeHtml(item.name || "-") + "</td>" +
+            "<td>" + AppUtils.formatMoney(item.open) + "</td>" +
+            "<td>" + AppUtils.formatMoney(item.high) + "</td>" +
+            "<td>" + AppUtils.formatMoney(item.low) + "</td>" +
+            "<td>" + AppUtils.formatMoney(item.close) + "</td>" +
+            "<td>" + AppUtils.formatVolume(item.volume) + "</td>" +
+            "<td>" + (item.turn ? item.turn.toFixed(2) : "-") + "%</td>" +
+            "<td><span class='" + changeClass + " fw-bold'>" + arrow + " " + AppUtils.formatPercent(item.change_percent) + "</span></td>";
+        return tr;
+    }
+
+    function sanitizeSearchKeyword(keyword) {
+        return keyword.replace(/[<>'"&]/g, "");
+    }
+
+    function loadStockList() {
+        var searchInput = document.getElementById("search-input");
+        var keyword = sanitizeSearchKeyword(searchInput.value);
+        var url = "/market/api/stock/list?page=1&pageSize=5000";
+        if (keyword) {
+            url += "&search=" + encodeURIComponent(keyword);
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    try {
+                        var json = JSON.parse(xhr.responseText);
+                        if (json.success && json.data) {
+                            var tbody = document.getElementById("stock-tbody");
+                            tbody.innerHTML = "";
+                            json.data.forEach(function(item) {
+                                tbody.appendChild(renderStockRow(item));
+                            });
+                            document.getElementById("status-text").textContent = "数据已更新 (" + json.data.length + " 条)";
+                        } else {
+                            document.getElementById("status-text").textContent = "数据加载失败";
+                        }
+                    } catch (e) {
+                        console.error("Parse error:", e);
+                        document.getElementById("status-text").textContent = "数据解析失败";
+                    }
+                } else {
+                    document.getElementById("status-text").textContent = "请求失败: " + xhr.status;
+                }
+            }
+        };
+        xhr.send();
+    }
+
+    function loadMarketSummary() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/market/api/market/summary", true);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                try {
+                    var json = JSON.parse(xhr.responseText);
+                    if (json.success && json.data) {
+                        var d = json.data;
+                        document.getElementById("gainers-count").textContent = d.gainers;
+                        document.getElementById("losers-count").textContent = d.losers;
+                        document.getElementById("unchanged-count").textContent = d.unchanged;
+
+                        var total = d.gainers + d.losers + d.unchanged;
+                        var tempPercent = total > 0 ? (d.gainers / total * 100).toFixed(1) : 50;
+                        var tempValue = (tempPercent - 50).toFixed(1);
+                        var tempEl = document.getElementById("market-temp");
+                        tempEl.textContent = (tempValue > 0 ? "+" : "") + tempValue + "°";
+                        tempEl.style.color = tempValue > 10 ? "var(--accent-red)" : tempValue < -10 ? "var(--accent-green)" : "var(--accent-yellow)";
+
+                        var indicatorPos = Math.min(100, Math.max(0, 50 + (tempValue / 50 * 50)));
+                        document.getElementById("temp-indicator").style.left = indicatorPos + "%";
+                    }
+                } catch (e) {
+                    console.error("Summary error:", e);
+                }
+            }
+        };
+        xhr.send();
+    }
+
+    function loadRanking(type, containerId) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/market/api/stock/ranking?type=" + type + "&limit=10", true);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                try {
+                    var json = JSON.parse(xhr.responseText);
+                    if (json.success && json.data) {
+                        var container = document.getElementById(containerId);
+                        container.innerHTML = "";
+                        json.data.forEach(function(item, idx) {
+                            var div = document.createElement("div");
+                            div.className = "ranking-item";
+                            var cls = idx === 0 ? "top-1" : idx === 1 ? "top-2" : idx === 2 ? "top-3" : "";
+                            var colorCls = type === "gainers" ? "text-danger" : "text-success";
+                            var arrow = type === "gainers" ? "▲" : "▼";
+                            div.innerHTML =
+                                "<div class='ranking-rank " + cls + "'>" + (idx + 1) + "</div>" +
+                                "<div class='ranking-info'>" +
+                                    "<div class='ranking-name'>" + item.name + "</div>" +
+                                    "<div class='ranking-code'>" + item.code + "</div>" +
+                                "</div>" +
+                                "<div class='ranking-price'>" +
+                                    "<div class='ranking-change " + colorCls + "'>" + arrow + " " + Math.abs(item.change_percent).toFixed(2) + "%</div>" +
+                                    "<div class='text-muted small'>" + item.close.toFixed(2) + "</div>" +
+                                "</div>";
+                            container.appendChild(div);
+                        });
+                    }
+                } catch (e) {
+                    console.error("Ranking error:", e);
+                }
+            }
+        };
+        xhr.send();
+    }
+
+    document.getElementById("refresh-btn").onclick = function() {
+        var btn = this;
+        btn.disabled = true;
+        document.getElementById("status-text").textContent = "正在刷新...";
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/market/api/refresh", true);
+        xhr.setRequestHeader("X-CSRFToken", "{{ csrf_token() }}");
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                btn.disabled = false;
+                if (xhr.status === 200) {
+                    try {
+                        var json = JSON.parse(xhr.responseText);
+                        if (json.success) {
+                            loadStockList();
+                            loadMarketSummary();
+                            loadRanking("gainers", "gainers-list");
+                            loadRanking("losers", "losers-list");
+                            document.getElementById("status-text").textContent = "数据已刷新";
+                        }
+                    } catch (e) {}
+                }
+            }
+        };
+        xhr.send();
+    };
+
+    document.getElementById("search-btn").onclick = loadStockList;
+    document.getElementById("search-input").onkeyup = function(e) {
+        if (e.key === "Enter") loadStockList();
+    };
+
+    document.getElementById("status-text").textContent = "正在加载数据...";
+
+    loadMarketSummary();
+    loadRanking("gainers", "gainers-list");
+    loadRanking("losers", "losers-list");
+    loadStockList();
+
+    setInterval(function() {
+        loadMarketSummary();
+        loadRanking("gainers", "gainers-list");
+        loadRanking("losers", "losers-list");
+    }, 60000);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,552 @@
+{% extends "base.html" %}
+
+{% block title %}基金交易 - 智能量化交易终端{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 trading-shell">
+    <div class="page-head mb-4">
+        <div>
+            <p class="section-kicker mb-2">Fund Trading</p>
+            <h1 class="page-title mb-1">基金模拟交易</h1>
+            <p class="text-muted mb-0">使用虚拟资金进行基金模拟交易，支持定投功能。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-outline-light" href="{{ url_for('fund_trade.position') }}">
+                <i class="fas fa-briefcase me-2"></i>持仓明细
+            </a>
+            <a class="btn btn-outline-light" href="{{ url_for('fund_trade.fixed') }}">
+                <i class="fas fa-calendar-alt me-2"></i>定投管理
+            </a>
+            <a class="btn btn-outline-light" href="{{ url_for('fund_trade.orders') }}">
+                <i class="fas fa-history me-2"></i>交易记录
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- 账户概览 -->
+        <div class="col-md-4">
+            <div class="card terminal-card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-wallet me-2 text-info"></i>账户概览</h5>
+                    <button class="btn btn-sm btn-outline-light" id="refresh-account-btn" title="刷新">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="card-body" id="account-body">
+                    <div class="text-center text-muted py-4" id="account-loading">
+                        <i class="fas fa-spinner fa-spin me-2"></i>加载中...
+                    </div>
+                    <div id="account-content" class="d-none">
+                        <div class="account-stat mb-3">
+                            <div class="stat-label">账户资金</div>
+                            <div class="stat-value" id="cash">--</div>
+                        </div>
+                        <div class="account-stat mb-3">
+                            <div class="stat-label">总资产</div>
+                            <div class="stat-value text-primary" id="total-assets">--</div>
+                        </div>
+                        <div class="account-stat mb-3">
+                            <div class="stat-label">基金持仓</div>
+                            <div class="stat-value" id="position-value">--</div>
+                        </div>
+                        <div class="account-stat mb-3">
+                            <div class="stat-label">股票持仓</div>
+                            <div class="stat-value" id="stock-position-value">--</div>
+                        </div>
+                        <div class="account-stat mb-3">
+                            <div class="stat-label">投资收益</div>
+                            <div class="stat-value" id="total-profit">--</div>
+                        </div>
+                        <div class="account-stat">
+                            <div class="stat-label">投资收益率</div>
+                            <div class="stat-value" id="profit-rate">--</div>
+                        </div>
+                    </div>
+                    <div class="text-center text-muted py-4 d-none" id="account-error">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <div id="account-error-msg">加载失败</div>
+                        <button class="btn btn-sm btn-outline-warning mt-2" onclick="loadAccountInfo()">
+                            <i class="fas fa-redo me-1"></i>重试
+                        </button>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-sm btn-outline-primary w-100" id="deposit-btn">
+                        <i class="fas fa-plus me-1"></i>充值
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 交易输入 -->
+        <div class="col-md-5">
+            <div class="card terminal-card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-coins me-2 text-warning"></i>基金交易</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">基金代码</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="fund-code" placeholder="如: 005827 (易方达蓝筹精选)">
+                            <button class="btn btn-outline-light" type="button" id="lookup-btn">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">输入6位基金代码</div>
+                    </div>
+
+                    <div id="fund-info-panel" class="d-none mb-3 p-3 bg-dark rounded">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="text-muted small">基金名称</div>
+                                <div class="fw-bold" id="fund-name">--</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">最新净值</div>
+                                <div class="fw-bold" id="fund-nav">--</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">估算净值</div>
+                                <div class="fw-bold" id="fund-estimate-nav">--</div>
+                            </div>
+                        </div>
+                        <div id="holding-info" class="mt-2 pt-2 border-top d-none">
+                            <div class="small text-muted">持仓信息</div>
+                            <div class="row text-center mt-1">
+                                <div class="col-3">
+                                    <div class="small text-muted">持有份额</div>
+                                    <div id="hold-shares">--</div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="small text-muted">成本</div>
+                                    <div id="hold-cost">--</div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="small text-muted">市值</div>
+                                    <div id="hold-value">--</div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="small text-muted">盈亏</div>
+                                    <div id="hold-profit">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">买入金额（元）</label>
+                        <input type="number" class="form-control" id="buy-amount" placeholder="输入买入金额" min="10" step="1">
+                        <div class="form-text">最低买入金额：10元</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">卖出份额</label>
+                        <input type="number" class="form-control" id="sell-shares" placeholder="输入卖出份额" min="0.01" step="0.01">
+                        <div class="form-text" id="max-sell-info">输入0表示全部卖出</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-danger flex-grow-1" id="buy-btn" disabled>
+                            <i class="fas fa-shopping-cart me-2"></i>买入
+                        </button>
+                        <button class="btn btn-success flex-grow-1" id="sell-btn" disabled>
+                            <i class="fas fa-hand-holding-usd me-2"></i>卖出
+                        </button>
+                    </div>
+
+                    <div class="mt-3 p-2 bg-dark rounded small">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>预估买入份额：</span>
+                            <span id="estimate-shares">-- 份</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>预估卖出金额：</span>
+                            <span id="estimate-redeem">-- 元</span>
+                        </div>
+                        <div class="text-muted text-center mt-2">
+                            <i class="fas fa-info-circle me-1"></i>基金交易免手续费
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 定投入口 -->
+        <div class="col-md-3">
+            <div class="card terminal-card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-calendar-plus me-2 text-success"></i>定投计划</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">设置自动定投计划，每月固定日期自动买入</p>
+                    <div class="mb-3">
+                        <label class="form-label">基金代码</label>
+                        <input type="text" class="form-control" id="fixed-fund-code" placeholder="基金代码">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">每月定投金额</label>
+                        <input type="number" class="form-control" id="fixed-amount" placeholder="金额" min="10">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">定投日（1-28）</label>
+                        <input type="number" class="form-control" id="fixed-day" placeholder="日期" min="1" max="28" value="1">
+                    </div>
+                    <button class="btn btn-outline-success w-100" id="create-fixed-btn">
+                        <i class="fas fa-plus me-2"></i>创建定投计划
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 持仓列表 -->
+    <div class="card terminal-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-briefcase me-2 text-success"></i>当前持仓</h5>
+            <a class="btn btn-sm btn-outline-light" href="{{ url_for('fund_trade.position') }}">查看更多</a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>基金代码</th>
+                            <th>基金名称</th>
+                            <th>持有份额</th>
+                            <th>成本</th>
+                            <th>当前净值</th>
+                            <th>市值</th>
+                            <th>盈亏</th>
+                            <th>盈亏率</th>
+                        </tr>
+                    </thead>
+                    <tbody id="position-tbody">
+                        <tr><td colspan="8" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 交易结果模态框 -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="resultModalTitle">交易结果</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="mb-3">
+                    <i class="fas fa-check-circle text-success fa-4x" id="resultIcon"></i>
+                </div>
+                <pre id="resultMessage" class="text-start bg-black p-3 rounded"></pre>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 充值模态框 -->
+<div class="modal fade" id="depositModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2 text-primary"></i>模拟充值</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">提示：这是模拟交易系统的充值功能，仅用于模拟交易练习。</p>
+                <div class="mb-3">
+                    <label class="form-label">充值金额（元）</label>
+                    <input type="number" class="form-control" id="deposit-amount" placeholder="输入充值金额" min="10" max="1000000" value="10000">
+                </div>
+                <div class="d-flex gap-2 mb-3">
+                    <button class="btn btn-outline-light flex-fill" data-amount="1000">+1000</button>
+                    <button class="btn btn-outline-light flex-fill" data-amount="5000">+5000</button>
+                    <button class="btn btn-outline-light flex-fill" data-amount="10000">+10000</button>
+                    <button class="btn btn-outline-light flex-fill" data-amount="50000">+50000</button>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirm-deposit-btn">
+                    <i class="fas fa-check me-2"></i>确认充值
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    "use strict";
+
+    var fundCode = "";
+    var currentNav = 0;
+    var holdingShares = 0;
+
+    function showResult(success, message) {
+        $("#resultIcon").removeClass("fa-check-circle fa-times-circle text-success text-danger")
+                       .addClass(success ? "fa-check-circle text-success" : "fa-times-circle text-danger");
+        $("#resultMessage").text(message);
+        new bootstrap.Modal($("#resultModal")[0]).show();
+    }
+
+    function loadAccountInfo() {
+        $("#account-loading").removeClass("d-none");
+        $("#account-content").addClass("d-none");
+        $("#account-error").addClass("d-none");
+
+        // 设置超时
+        var timeout = setTimeout(function() {
+            $("#account-loading").addClass("d-none");
+            $("#account-error-msg").text("加载超时，请检查网络");
+            $("#account-error").removeClass("d-none");
+        }, 8000);
+
+        $.get("/fund/trade/api/account/info", function(res) {
+            clearTimeout(timeout);
+            $("#account-loading").addClass("d-none");
+
+            if (res.success) {
+                var d = res.data;
+                $("#cash").text(AppUtils.formatMoney(d.cash) + " 元");
+                $("#position-value").text(AppUtils.formatMoney(d.position_value) + " 元");
+                $("#stock-position-value").text(AppUtils.formatMoney(d.stock_position_value || 0) + " 元");
+                $("#total-assets").text(AppUtils.formatMoney(d.total_assets) + " 元");
+
+                var profit = d.total_profit;
+                var profitRate = d.profit_rate;
+                var profitClass = profit >= 0 ? "text-danger" : "text-success";
+                var profitSign = profit >= 0 ? "+" : "";
+                $("#total-profit").removeClass("text-danger text-success")
+                                 .addClass(profitClass)
+                                 .text(profitSign + AppUtils.formatMoney(profit) + " 元");
+                $("#profit-rate").removeClass("text-danger text-success")
+                                .addClass(profitClass)
+                                .text(profitSign + profitRate.toFixed(2) + "%");
+
+                var tbody = $("#position-tbody");
+                if (d.positions && d.positions.length > 0) {
+                    tbody.empty();
+                    d.positions.forEach(function(p) {
+                        var profitClass = p.profit >= 0 ? "text-danger" : "text-success";
+                        var profitSign = p.profit >= 0 ? "+" : "";
+                        tbody.append('<tr>' +
+                            '<td>' + p.fund_code + '</td>' +
+                            '<td>' + p.fund_name + '</td>' +
+                            '<td>' + p.total_shares.toFixed(2) + '</td>' +
+                            '<td>' + p.avg_cost.toFixed(4) + '</td>' +
+                            '<td>' + p.current_nav.toFixed(4) + '</td>' +
+                            '<td>' + AppUtils.formatMoney(p.market_value) + '</td>' +
+                            '<td class="' + profitClass + '">' + profitSign + AppUtils.formatMoney(p.profit) + '</td>' +
+                            '<td class="' + profitClass + '">' + profitSign + p.profit_rate.toFixed(2) + '%</td></tr>');
+                    });
+                } else {
+                    tbody.html('<tr><td colspan="8" class="text-center text-muted">暂无持仓</td></tr>');
+                }
+
+                $("#account-content").removeClass("d-none");
+            } else {
+                $("#account-error-msg").text(res.error || "加载失败");
+                $("#account-error").removeClass("d-none");
+            }
+        }).fail(function() {
+            clearTimeout(timeout);
+            $("#account-loading").addClass("d-none");
+            $("#account-error-msg").text("网络错误，请检查网络连接");
+            $("#account-error").removeClass("d-none");
+        });
+    }
+
+    function lookupFund() {
+        var code = $("#fund-code").val().trim();
+        if (!code) return;
+        code = code.replace(/[^0-9]/g, "");
+        fundCode = code;
+        $("#fund-code").val(code);
+
+        $.get("/fund/trade/api/fund/quote/" + code, function(res) {
+            if (res.success) {
+                var f = res.data.fund;
+                currentNav = f.nav || f.estimate_nav || 0;
+
+                $("#fund-info-panel").removeClass("d-none");
+                $("#fund-name").text(f.name || code);
+                $("#fund-nav").text(currentNav.toFixed(4));
+                $("#fund-estimate-nav").text(f.estimate_nav ? f.estimate_nav.toFixed(4) + " (估)" : "-");
+
+                if (res.data.holding) {
+                    var h = res.data.holding;
+                    holdingShares = h.total_shares;
+                    $("#holding-info").removeClass("d-none");
+                    $("#hold-shares").text(h.total_shares.toFixed(2) + " 份");
+                    $("#hold-cost").text(h.avg_cost.toFixed(4));
+                    $("#hold-value").text(AppUtils.formatMoney(h.market_value) + " 元");
+                        var profitSign = h.profit >= 0 ? "+" : "";
+                    var profitCls = h.profit >= 0 ? "text-danger" : "text-success";
+                    $("#hold-profit").text(profitSign + AppUtils.formatMoney(h.profit) + " (" + profitSign + h.profit_rate.toFixed(2) + "%)");
+                    $("#hold-profit").removeClass("text-danger text-success").addClass(profitCls);
+                    $("#max-sell-info").text("最大可卖: " + h.total_shares.toFixed(2) + " 份");
+                    $("#sell-shares").attr("placeholder", "输入份额或0卖出全部");
+                } else {
+                    holdingShares = 0;
+                    $("#holding-info").addClass("d-none");
+                    $("#max-sell-info").text("输入0表示全部卖出");
+                    $("#sell-shares").attr("placeholder", "输入卖出份额");
+                }
+
+                $("#buy-btn, #sell-btn").prop("disabled", false);
+                updateEstimate();
+            } else {
+                showResult(false, "基金代码不存在");
+            }
+        });
+    }
+
+    function updateEstimate() {
+        var buyAmount = parseFloat($("#buy-amount").val()) || 0;
+        var sellShares = parseFloat($("#sell-shares").val()) || 0;
+
+        var estShares = currentNav > 0 ? (buyAmount / currentNav).toFixed(2) : "--";
+        var estRedeem = currentNav > 0 ? (sellShares * currentNav).toFixed(2) : "--";
+
+        $("#estimate-shares").text(estShares + " 份");
+        $("#estimate-redeem").text(AppUtils.formatMoney(parseFloat(estRedeem)) + " 元");
+    }
+
+    function buy() {
+        var amount = parseFloat($("#buy-amount").val());
+        if (!fundCode) { showResult(false, "请先查询基金"); return; }
+        if (!amount || amount < 10) { showResult(false, "最低买入金额为10元"); return; }
+
+        $.ajax({
+            url: "/fund/trade/api/buy",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({fund_code: fundCode, amount: amount}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, res.message);
+                    loadAccountInfo();
+                    lookupFund();
+                    $("#buy-amount").val("");
+                    updateEstimate();
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+
+    function sell() {
+        var shares = parseFloat($("#sell-shares").val()) || 0;
+        if (!fundCode) { showResult(false, "请先查询基金"); return; }
+        if (shares < 0) { showResult(false, "卖出份额不能为负"); return; }
+        if (shares === 0) shares = holdingShares;
+        if (shares <= 0) { showResult(false, "请输入卖出份额"); return; }
+        if (shares > holdingShares) { showResult(false, "持仓不足"); return; }
+
+        $.ajax({
+            url: "/fund/trade/api/sell",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({fund_code: fundCode, shares: shares}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, res.message);
+                    loadAccountInfo();
+                    lookupFund();
+                    $("#sell-shares").val("");
+                    updateEstimate();
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+
+    function createFixedPlan() {
+        var code = $("#fixed-fund-code").val().trim().replace(/[^0-9]/g, "");
+        var amount = parseFloat($("#fixed-amount").val());
+        var day = parseInt($("#fixed-day").val()) || 1;
+
+        if (!code) { showResult(false, "请输入基金代码"); return; }
+        if (!amount || amount < 10) { showResult(false, "定投金额不能少于10元"); return; }
+        if (day < 1 || day > 28) { showResult(false, "定投日必须在1-28之间"); return; }
+
+        $.ajax({
+            url: "/fund/trade/api/fixed/create",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({fund_code: code, amount: amount, day: day}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, res.message);
+                    $("#fixed-fund-code, #fixed-amount").val("");
+                    $("#fixed-day").val("1");
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+
+    function doDeposit() {
+        var amount = parseFloat($("#deposit-amount").val());
+        if (!amount || amount <= 0) {
+            showResult(false, "请输入正确的充值金额");
+            return;
+        }
+        if (amount > 1000000) {
+            showResult(false, "单次充值上限100万元");
+            return;
+        }
+
+        $.ajax({
+            url: "/fund/trade/api/deposit",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({amount: amount}),
+            success: function(res) {
+                if (res.success) {
+                    showResult(true, res.message);
+                    loadAccountInfo();
+                    $("#depositModal").modal("hide");
+                } else {
+                    showResult(false, res.error);
+                }
+            }
+        });
+    }
+
+    $("#lookup-btn").click(lookupFund);
+    $("#fund-code").on("keyup", function(e) { if (e.key === "Enter") lookupFund(); });
+    $("#buy-amount, #sell-shares").on("input", updateEstimate);
+    $("#buy-btn").click(buy);
+    $("#sell-btn").click(sell);
+    $("#create-fixed-btn").click(createFixedPlan);
+    $("#refresh-account-btn").click(loadAccountInfo);
+
+    $("#deposit-btn").click(function() {
+        new bootstrap.Modal($("#depositModal")[0]).show();
+    });
+    $("#confirm-deposit-btn").click(doDeposit);
+    $("#depositModal [data-amount]").click(function() {
+        var add = parseInt($(this).data("amount"));
+        var current = parseFloat($("#deposit-amount").val()) || 0;
+        $("#deposit-amount").val(current + add);
+    });
+
+    loadAccountInfo();
+})();
+</script>
+{% endblock %}

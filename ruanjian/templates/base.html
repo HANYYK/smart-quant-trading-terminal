@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}智能量化交易终端{% endblock %}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <form id="csrf-form" style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    </form>
+
+    <nav class="navbar navbar-expand-lg navbar-dark app-nav shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="{{ url_for('dashboard.index') }}">
+                <i class="fas fa-chart-line me-2"></i>智能量化交易终端
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <!-- 股票模块 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="{{ url_for('dashboard.index') }}" data-bs-toggle="dropdown">
+                            <i class="fas fa-chart-line me-1"></i>股票
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('dashboard.index') }}">
+                                <i class="fas fa-tachometer-alt me-2"></i>行情中心
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('stock.sector') }}">
+                                <i class="fas fa-layer-group me-2"></i>板块轮动
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('stock.compare') }}">
+                                <i class="fas fa-balance-scale me-2"></i>股票对比
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 基金模块 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="{{ url_for('fund.search') }}" data-bs-toggle="dropdown">
+                            <i class="fas fa-piggy-bank me-1"></i>基金
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('fund.search') }}">
+                                <i class="fas fa-search me-2"></i>基金搜索
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('fund.ranking') }}">
+                                <i class="fas fa-trophy me-2"></i>基金排行
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('fund.compare') }}">
+                                <i class="fas fa-balance-scale-right me-2"></i>基金对比
+                            </a></li>
+                        </ul>
+                    </li>
+                    <!-- 交易模块 -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="{{ url_for('trade.index') }}" data-bs-toggle="dropdown">
+                            <i class="fas fa-exchange-alt me-1"></i>交易
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('trade.index') }}">
+                                <i class="fas fa-chart-line me-2"></i>股票模拟交易
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('fund_trade.index') }}">
+                                <i class="fas fa-piggy-bank me-2"></i>基金模拟交易
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('fund_trade.position') }}">
+                                <i class="fas fa-briefcase me-2"></i>我的持仓
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('fund_trade.fixed') }}">
+                                <i class="fas fa-calendar-alt me-2"></i>定投计划
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('fund_trade.orders') }}">
+                                <i class="fas fa-history me-2"></i>交易记录
+                            </a></li>
+                        </ul>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user-circle me-1"></i>{{ current_user.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}">
+                                <i class="fas fa-user me-2"></i>个人中心
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="#" onclick="document.getElementById('logout-form').submit(); return false;">
+                                <i class="fas fa-sign-out-alt me-2"></i>退出登录
+                            </a></li>
+                            <li>
+                                <form id="logout-form" method="POST" action="{{ url_for('auth.logout') }}" style="display:none">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                </form>
+                            </li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('auth.login') }}">
+                            <i class="fas fa-sign-in-alt me-1"></i>登录
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('auth.register') }}">
+                            <i class="fas fa-user-plus me-1"></i>注册
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show container mt-3" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-dark text-light text-center py-3 mt-4">
+        <div class="container">
+            <p class="mb-0 text-muted">
+                &copy; 2024 智能量化交易终端 | Python 3.11+ | Flask
+            </p>
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/table.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/validator.js') }}"></script>
+
+    <script>
+    // 所有 AJAX 请求自动携带 CSRF token
+    $.ajaxSetup({
+        beforeSend: function(xhr, settings) {
+            if (!/^(GET|HEAD|OPTIONS)$/i.test(settings.type) && !this.crossDomain) {
+                xhr.setRequestHeader("X-CSRFToken", "{{ csrf_token() }}");
+            }
+        }
+    });
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
