@@ -25,12 +25,6 @@ try:
 except ImportError:
     SNOWNLP_AVAILABLE = False
 
-try:
-    import tensorflow as tf
-    TF_AVAILABLE = True
-except ImportError:
-    TF_AVAILABLE = False
-
 stock_bp = Blueprint("stock", __name__)
 
 
@@ -103,12 +97,12 @@ def predict_trend_lstm(df: pd.DataFrame, future_days: int = 3) -> dict:
     """
     使用LSTM模型预测未来走势
     """
-    if not TF_AVAILABLE or len(df) < 60:
+    if len(df) < 30:
         return {
             "predictions": [],
             "confidence": 0,
             "trend": "neutral",
-            "message": "模型不可用或数据不足"
+            "message": "历史数据不足（需要至少30个交易日）"
         }
 
     try:
@@ -192,44 +186,83 @@ def _get_fallback_kline_data(code: str) -> pd.DataFrame:
     return df
 
 
+# 中文金融情感关键词
+_POSITIVE_WORDS = [
+    "利好", "增长", "上涨", "突破", "盈利", "增持", "买入", "看好",
+    "创新", "增长", "超预期", "反弹", "升", "涨", "新高", "分红",
+    "政策支持", "回暖", "复苏", "业绩", "扩张", "合作",
+]
+_NEGATIVE_WORDS = [
+    "利空", "下跌", "亏损", "减持", "卖出", "风险", "暴跌", "爆雷",
+    "下滑", "退市", "ST", "跌", "降", "金融危机", "衰退",
+    "诉讼", "罚款", "违规", "警告", "负债", "过剩",
+]
+
+
 def analyze_sentiment(news_list: list[str]) -> dict:
-    """使用SnowNLP进行情绪分析"""
-    if not SNOWNLP_AVAILABLE or not news_list:
-        return {
-            "score": 50,
-            "sentiment": "neutral",
-            "news_count": 0,
-            "message": "情绪分析不可用或无新闻数据"
-        }
+    """使用SnowNLP进行情绪分析，不可用时使用关键词匹配兜底"""
+    if not news_list:
+        return {"score": 50, "sentiment": "neutral", "news_count": 0,
+                "method": "none"}
 
-    try:
-        scores = []
-        for news in news_list[:10]:
-            if len(news) > 5:
-                s = SnowNLP(news)
-                scores.append(s.sentiments)
+    if SNOWNLP_AVAILABLE:
+        try:
+            scores = []
+            for news in news_list[:10]:
+                if len(news) > 5:
+                    s = SnowNLP(news)
+                    scores.append(s.sentiments)
 
-        if not scores:
-            return {"score": 50, "sentiment": "neutral", "news_count": 0}
+            if scores:
+                avg_score = np.mean(scores) * 100
+                if avg_score > 60:
+                    sentiment = "positive"
+                elif avg_score < 40:
+                    sentiment = "negative"
+                else:
+                    sentiment = "neutral"
 
-        avg_score = np.mean(scores) * 100
+                return {
+                    "score": round(avg_score, 2),
+                    "sentiment": sentiment,
+                    "news_count": len(news_list),
+                    "method": "snownlp",
+                }
+        except Exception:
+            pass  # fall through to keyword fallback
 
-        if avg_score > 60:
-            sentiment = "positive"
-        elif avg_score < 40:
-            sentiment = "negative"
-        else:
-            sentiment = "neutral"
+    # 关键词匹配兜底
+    pos_count = 0
+    neg_count = 0
+    for news in news_list[:10]:
+        text = news.lower()
+        for w in _POSITIVE_WORDS:
+            if w in text:
+                pos_count += 1
+        for w in _NEGATIVE_WORDS:
+            if w in text:
+                neg_count += 1
 
-        return {
-            "score": round(avg_score, 2),
-            "sentiment": sentiment,
-            "news_count": len(news_list),
-            "details": scores[:5]
-        }
+    total = pos_count + neg_count
+    if total > 0:
+        score = 50 + 30 * (pos_count - neg_count) / max(total, 1)
+        score = max(10, min(90, score))
+    else:
+        score = 50
 
-    except Exception:
-        return {"score": 50, "sentiment": "neutral", "news_count": 0}
+    if score > 60:
+        sentiment = "positive"
+    elif score < 40:
+        sentiment = "negative"
+    else:
+        sentiment = "neutral"
+
+    return {
+        "score": round(score, 1),
+        "sentiment": sentiment,
+        "news_count": len(news_list),
+        "method": "keyword",
+    }
 
 
 @stock_bp.route("/detail/<stock_code>")

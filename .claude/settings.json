@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"netstat -an | findstr 7879\")",
+      "Bash(curl -x http://127.0.0.1:7879 -s -o /dev/null -w \"%{http_code}\" --connect-timeout 10 https://github.com)",
+      "Bash(curl -x socks5://127.0.0.1:7879 -s -o /dev/null -w \"%{http_code}\" --connect-timeout 10 https://github.com)",
+      "Bash(export http_proxy=\"http://127.0.0.1:7897\")",
+      "Bash(export https_proxy=\"http://127.0.0.1:7897\")",
+      "Bash(git config *)",
+      "Bash(\"C:/Program Files/GitHub CLI/gh.exe\" repo create \"smart-quant-trading-terminal\" --source=. --public --remote=origin --push)",
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "WebSearch",
+      "WebFetch(domain:pypi.org)",
+      "Bash(git commit -m 'fix: AI预测和情感分析真正可用（零额外依赖） *)",
+      "Bash(git push *)"
+    ]
+  }
+}

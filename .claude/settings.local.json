@@ -8,7 +8,12 @@
       "Bash(gh auth *)",
       "Bash(git --version)",
       "Bash(winget install *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat: 智能量化交易终端 - A股量化分析平台 *)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Read(//c/Program Files \\(x86\\)/GitHub CLI/**)",
+      "Bash(cmd.exe /c \"where gh\")",
+      "Bash(\"C:/Program Files/GitHub CLI/gh.exe\" auth login --hostname github.com --git-protocol https --web)"
     ]
   }
 }
