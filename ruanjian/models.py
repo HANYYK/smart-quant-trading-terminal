@@ -68,34 +68,30 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
     def update_last_login(self) -> None:
-        """更新最后登录时间"""
+        """更新最后登录时间（由调用方 commit）"""
         self.last_login = datetime.now(timezone.utc)
-        db.session.commit()
 
     def generate_email_verification_token(self) -> str:
-        """生成邮箱验证令牌"""
+        """生成邮箱验证令牌（由调用方 commit）"""
         self.email_verification_token = secrets.token_urlsafe(32)
-        db.session.commit()
         return self.email_verification_token
 
     def verify_email(self) -> bool:
-        """验证邮箱"""
+        """验证邮箱（由调用方 commit）"""
         if self.email_verified:
             return False
         self.email_verified = True
         self.email_verification_token = None
-        db.session.commit()
         return True
 
     def generate_password_reset_token(self, expires_hours: int = 24) -> str:
-        """生成密码重置令牌"""
+        """生成密码重置令牌（由调用方 commit）"""
         self.password_reset_token = secrets.token_urlsafe(32)
         self.password_reset_expires = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
-        db.session.commit()
         return self.password_reset_token
 
     def reset_password(self, new_password: str) -> bool:
-        """重置密码"""
+        """重置密码（由调用方 commit）"""
         if not self.password_reset_token or not self.password_reset_expires:
             return False
         if datetime.now(timezone.utc) > self.password_reset_expires:
@@ -103,7 +99,6 @@ class User(UserMixin, db.Model):
         self.set_password(new_password)
         self.password_reset_token = None
         self.password_reset_expires = None
-        db.session.commit()
         return True
 
     def is_admin(self) -> bool:

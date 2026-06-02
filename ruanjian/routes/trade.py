@@ -4,7 +4,7 @@
 from flask import Blueprint, render_template, jsonify, request
 from flask_login import login_required, current_user
 from datetime import datetime, timezone
-from sqlalchemy import desc
+from sqlalchemy import desc, func, case
 import logging
 import re
 
@@ -27,16 +27,7 @@ TRADING_HOURS = {
     "end_hour": 15, "end_minute": 0
 }
 
-
-def get_commission(amount: float, rate: float = DEFAULT_COMMISSION_RATE) -> float:
-    """计算手续费（最低5元）"""
-    commission = amount * rate
-    return max(5.0, commission)
-
-
-def can_trade() -> tuple[bool, str]:
-    """检查是否可以交易（模拟交易全天候开放）"""
-    return True, ""
+from utils.trading import can_trade, get_commission
 
 
 def is_supported_stock_code(stock_code: str) -> bool:
@@ -53,38 +44,6 @@ def is_supported_stock_code(stock_code: str) -> bool:
     if market == "bj":
         return digits.startswith(("43", "83", "87", "88", "92"))
     return False
-
-
-def get_last_trading_day_price(stock_code: str) -> tuple[float, str]:
-    """获取最近一个交易日（周五）的收盘价（用于周六日交易）"""
-    try:
-        from routes.stock import fetch_kline_data
-        # 获取足够的数据来找到周五
-        df = fetch_kline_data(stock_code, count=30)
-        if df.empty:
-            return 0.0, ""
-
-        now = datetime.now()
-        # 如果是周一到周四，直接返回最新价
-        if now.weekday() < 5:
-            return float(df.iloc[-1]["close"]), df.iloc[-1].get("date", "")
-
-        # 如果是周六或周日，查找最近的周五
-        for i in range(len(df) - 1, -1, -1):
-            date_str = df.iloc[i].get("date", "")
-            if date_str:
-                try:
-                    date = datetime.strptime(date_str, "%Y-%m-%d")
-                    if date.weekday() == 4:  # 周五
-                        return float(df.iloc[i]["close"]), date_str
-                except ValueError:
-                    continue
-
-        # 如果没找到周五，返回最新价
-        return float(df.iloc[-1]["close"]), df.iloc[-1].get("date", "")
-    except Exception as e:
-        logger.warning(f"获取周五价格失败 {stock_code}: {e}")
-        return 0.0, ""
 
 
 def get_stock_price_from_api(stock_code: str) -> tuple[float, str]:
@@ -671,29 +630,32 @@ def set_initial_cash():
 @trade_bp.route("/api/summary")
 @login_required
 def get_trading_summary():
-    """获取交易统计"""
+    """获取交易统计（使用 SQL 聚合，避免全量加载到 Python）"""
     try:
-        trades = Trade.query.filter_by(user_id=current_user.id).all()
+        stats = db.session.query(
+            func.count(Trade.id),
+            func.sum(case((Trade.action == Trade.ACTION_BUY, 1), else_=0)),
+            func.sum(case((Trade.action == Trade.ACTION_SELL, 1), else_=0)),
+            func.coalesce(func.sum(Trade.commission), 0),
+            func.coalesce(func.sum(case((Trade.profit.isnot(None), Trade.profit), else_=0)), 0),
+            func.coalesce(func.sum(case((Trade.profit > 0, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Trade.profit < 0, 1), else_=0)), 0),
+        ).filter_by(user_id=current_user.id).first()
 
-        buy_count = sum(1 for t in trades if t.action == Trade.ACTION_BUY)
-        sell_count = sum(1 for t in trades if t.action == Trade.ACTION_SELL)
-        total_commission = sum(t.commission for t in trades)
-
-        sell_trades = [t for t in trades if t.action == Trade.ACTION_SELL and t.profit is not None]
-        total_profit = sum(t.profit for t in sell_trades)
-        win_trades = [t for t in sell_trades if t.profit > 0]
-        win_rate = len(win_trades) / len(sell_trades) * 100 if sell_trades else 0
+        total, buy_n, sell_n, commission, total_profit, win_n, loss_n = stats
+        sell_n_val = sell_n or 0
+        win_rate = win_n / sell_n_val * 100 if sell_n_val else 0
 
         return jsonify({
             "success": True,
             "data": {
-                "total_trades": len(trades),
-                "buy_count": buy_count,
-                "sell_count": sell_count,
-                "total_commission": round(total_commission, 2),
-                "total_profit": round(total_profit, 2),
-                "win_count": len(win_trades),
-                "loss_count": len(sell_trades) - len(win_trades),
+                "total_trades": total or 0,
+                "buy_count": buy_n or 0,
+                "sell_count": sell_n_val,
+                "total_commission": round(float(commission), 2),
+                "total_profit": round(float(total_profit), 2),
+                "win_count": win_n or 0,
+                "loss_count": loss_n or 0,
                 "win_rate": round(win_rate, 2),
             }
         })

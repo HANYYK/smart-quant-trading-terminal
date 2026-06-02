@@ -4,7 +4,7 @@
 from flask import Blueprint, render_template, jsonify, request
 from flask_login import login_required, current_user
 from datetime import datetime, timezone
-from sqlalchemy import desc
+from sqlalchemy import desc, func, case
 from sqlalchemy.exc import OperationalError
 import logging
 import re
@@ -13,47 +13,14 @@ from extensions import db
 from models import FixedInvestment, FundPosition, FundTrade, Portfolio, Trade
 from utils.accounting import build_account_snapshot
 
+from utils.fund_helpers import (
+    normalize_fund_code, is_valid_fund_name, clean_html_text,
+    INVALID_FUND_NAME_KEYWORDS, validate_fund_code,
+)
+from utils.trading import can_trade, get_commission, DEFAULT_FUND_COMMISSION_RATE as DEFAULT_COMMISSION_RATE
+
 logger = logging.getLogger(__name__)
 fund_trade_bp = Blueprint("fund_trade", __name__, url_prefix="/fund/trade")
-
-# 默认手续费率（基金通常没有手续费或很低）
-DEFAULT_COMMISSION_RATE = 0.0  # 前端基金一般免手续费
-
-# 基金交易时间（模拟交易全天候开放）
-TRADING_HOURS = {
-    "start_hour": 9, "start_minute": 30,
-    "end_am_hour": 11, "end_am_minute": 30,
-    "start_pm_hour": 13, "start_pm_minute": 0,
-    "end_hour": 15, "end_minute": 0
-}
-
-INVALID_FUND_NAME_KEYWORDS = (
-    "郑重声明",
-    "天天基金网发布",
-    "与本网站立场无关",
-    "不保证该信息",
-    "投资决策建议",
-    "风险自担",
-    "数据来源",
-    "东方财富Choice数据",
-)
-
-
-def normalize_fund_code(fund_code: str) -> str:
-    """Keep only a valid six-digit fund code."""
-    return re.sub(r"\D", "", str(fund_code or ""))[:6]
-
-
-def is_valid_fund_name(name: str, fund_code: str = "") -> bool:
-    """Reject long scraped disclaimers and other invalid fund names."""
-    name = re.sub(r"\s+", " ", str(name or "")).strip()
-    if not name or name == fund_code:
-        return False
-    if len(name) > 80:
-        return False
-    if any(keyword in name for keyword in INVALID_FUND_NAME_KEYWORDS):
-        return False
-    return True
 
 
 def repair_fund_name(fund_code: str, current_name: str = "") -> str:
@@ -778,27 +745,28 @@ def execute_fixed_plan(plan_id: int):
 @fund_trade_bp.route("/api/summary")
 @login_required
 def get_trading_summary():
-    """获取基金交易统计"""
+    """获取基金交易统计（使用 SQL 聚合，避免全量加载到 Python）"""
     try:
-        trades = FundTrade.query.filter_by(user_id=current_user.id).all()
+        stats = db.session.query(
+            func.count(FundTrade.id),
+            func.sum(case((FundTrade.action == FundTrade.ACTION_BUY, 1), else_=0)),
+            func.sum(case((FundTrade.action == FundTrade.ACTION_SELL, 1), else_=0)),
+            func.sum(case((FundTrade.trade_type == FundTrade.TYPE_FIXED, 1), else_=0)),
+            func.coalesce(func.sum(case((FundTrade.action == FundTrade.ACTION_BUY, FundTrade.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((FundTrade.profit.isnot(None), FundTrade.profit), else_=0)), 0),
+        ).filter_by(user_id=current_user.id).first()
 
-        buy_count = sum(1 for t in trades if t.action == FundTrade.ACTION_BUY)
-        sell_count = sum(1 for t in trades if t.action == FundTrade.ACTION_SELL)
-        fixed_count = sum(1 for t in trades if t.trade_type == FundTrade.TYPE_FIXED)
-        total_invested = sum(t.amount for t in trades if t.action == FundTrade.ACTION_BUY)
-
-        sell_trades = [t for t in trades if t.action == FundTrade.ACTION_SELL and t.profit is not None]
-        total_profit = sum(t.profit for t in sell_trades)
+        total, buy_n, sell_n, fixed_n, total_invested, total_profit = stats
 
         return jsonify({
             "success": True,
             "data": {
-                "total_trades": len(trades),
-                "buy_count": buy_count,
-                "sell_count": sell_count,
-                "fixed_count": fixed_count,
-                "total_invested": round(total_invested, 2),
-                "total_profit": round(total_profit, 2),
+                "total_trades": total or 0,
+                "buy_count": buy_n or 0,
+                "sell_count": sell_n or 0,
+                "fixed_count": fixed_n or 0,
+                "total_invested": round(float(total_invested), 2),
+                "total_profit": round(float(total_profit), 2),
             }
         })
 

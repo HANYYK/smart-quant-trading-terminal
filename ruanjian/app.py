@@ -267,13 +267,13 @@ def _ensure_trade_tables(app: Flask) -> None:
                         CREATE TABLE IF NOT EXISTS trading_summaries (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             user_id INTEGER NOT NULL,
-                            summary_date DATE NOT NULL,
+                            date DATE NOT NULL,
                             total_value FLOAT NOT NULL DEFAULT 0.0,
                             cash FLOAT NOT NULL DEFAULT 0.0,
                             position_value FLOAT NOT NULL DEFAULT 0.0,
-                            total_profit FLOAT NOT NULL DEFAULT 0.0,
+                            profit FLOAT NOT NULL DEFAULT 0.0,
+                            profit_rate FLOAT NOT NULL DEFAULT 0.0,
                             created_at DATETIME NOT NULL,
-                            updated_at DATETIME NOT NULL,
                             FOREIGN KEY (user_id) REFERENCES users (id)
                         )
                     """,

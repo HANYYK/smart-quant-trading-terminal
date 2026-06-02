@@ -26,12 +26,12 @@ class CacheEntry:
 class MemoryCache:
     """线程安全的内存缓存（单例模式）"""
     _instance = None
+    _instance_lock = threading.Lock()
     _MAX_SIZE = 1000
 
     def __new__(cls):
         if cls._instance is None:
-            _instance_lock = threading.Lock()
-            with _instance_lock:
+            with cls._instance_lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
                     cls._instance._cache = collections.OrderedDict()
@@ -144,12 +144,12 @@ def cache_key(*args, **kwargs) -> str:
 
 
 def rate_limit(max_calls: int = 60, window: int = 60):
-    """限流装饰器（线程安全版本）"""
-    call_times = {}
-    _lock = threading.Lock()
-    _last_cleanup = [0.0]
+    """限流装饰器 — 每个被装饰函数独立计数，避免跨路由干扰"""
 
     def decorator(func: Callable) -> Callable:
+        call_times = {}  # 每个函数独立的调用记录
+        _lock = threading.Lock()
+        _last_cleanup = [0.0]
         @wraps(func)
         def wrapper(*args, **kwargs):
             from flask import request, jsonify

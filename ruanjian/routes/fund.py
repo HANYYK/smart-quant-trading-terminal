@@ -12,6 +12,8 @@ import re
 from datetime import datetime, timedelta
 import logging
 
+from utils import cached
+
 logger = logging.getLogger(__name__)
 fund_bp = Blueprint("fund", __name__)
 
@@ -110,8 +112,7 @@ def api_resp(success, data=None, error=None):
     if error: r["error"] = error
     return r
 
-def validate_code(code):
-    return (True,"") if re.match(r"^\d{6}$", str(code).strip()) else (False,"基金代码格式无效")
+
 
 def guess_type(name):
     if any(k in name for k in ["指数","ETF","联接"]): return "指数型"
@@ -157,6 +158,7 @@ def _is_valid_fund_name(name: str, fund_code: str = "") -> bool:
     return True
 
 
+@cached(ttl=3600)
 def search_funds_from_api(keyword: str, search_type: str = "all") -> list:
     """从东方财富搜索真实基金数据"""
     try:
@@ -242,6 +244,7 @@ def _format_scale(scale: float) -> str:
         return f"{scale:.1f}亿"
 
 
+@cached(ttl=30)
 def fetch_fund_realtime_data(fund_code: str) -> dict:
     """获取基金实时估值数据"""
     try:
@@ -269,6 +272,7 @@ def fetch_fund_realtime_data(fund_code: str) -> dict:
         return api_resp(False, error=str(e))
 
 
+@cached(ttl=21600)
 def fetch_fund_history(fund_code: str, days: int = 365) -> dict:
     """获取基金历史净值"""
     end_date = datetime.now()
@@ -475,6 +479,7 @@ def fetch_fund_history_from_f10_page(fund_code: str, days: int = 365) -> dict:
         return {"success": False, "error": str(e)}
 
 
+@cached(ttl=86400)
 def fetch_fund_holdings(fund_code: str) -> dict:
     """获取基金重仓持股"""
     try:
@@ -483,8 +488,8 @@ def fetch_fund_holdings(fund_code: str) -> dict:
             "type": "jjcc",
             "code": fund_code,
             "topline": "20",
-            "year": datetime.now().year,
-            "month": (datetime.now().month - 1) % 12 + 1
+            "year": datetime.now().year if datetime.now().month > 1 else datetime.now().year - 1,
+            "month": datetime.now().month - 1 if datetime.now().month > 1 else 12
         }
 
         response = _session.get(url, params=params, timeout=10)
@@ -510,6 +515,7 @@ def fetch_fund_holdings(fund_code: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+@cached(ttl=86400)
 def fetch_fund_info(fund_code: str) -> dict:
     """获取基金详细信息"""
     try:
@@ -1103,6 +1109,7 @@ def _interpret_correlation(r: float) -> str:
     return f"{strength}{direction}相关"
 
 
+@cached(ttl=86400)
 def fetch_fund_asset_allocation(fund_code: str) -> dict:
     """获取基金资产配置"""
     try:
@@ -1156,6 +1163,7 @@ def _infer_asset_allocation(fund_code: str) -> list:
     return [{"type": "股票", "ratio": 60.0}, {"type": "债券", "ratio": 25.0}, {"type": "现金", "ratio": 15.0}]
 
 
+@cached(ttl=86400)
 def fetch_fund_manager_info(fund_code: str) -> dict:
     """获取基金经理详细信息"""
     try:
@@ -1211,6 +1219,7 @@ def fetch_fund_dividend_history(fund_code: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+@cached(ttl=86400)
 def fetch_fund_risk_metrics(fund_code: str) -> dict:
     """获取基金风险评级"""
     try:
@@ -1256,6 +1265,7 @@ def _get_risk_description(risk_level: str) -> str:
     return descriptions.get(risk_level, "风险等级未知")
 
 
+@cached(ttl=21600)
 def fetch_index_data(index_code: str = "000300", days: int = 90) -> dict:
     """获取指数历史数据用于对比"""
     end_date = datetime.now()
@@ -1488,9 +1498,9 @@ def compare_funds():
             )
             period = calculate_period_returns(history["data"])
 
-            performance.update({
-                "annualized_return": period.get("1y", 0) if period else 0,
-            })
+            # 附加各时段收益到 performance（保留 CAGR 计算的 annualized_return）
+            if period:
+                performance["period_returns"] = period
 
         results.append({
             "fund_code": code,
@@ -1714,46 +1724,6 @@ def get_risk(fund_code: str):
         return jsonify({"success": False, "error": error})
 
     return jsonify(fetch_fund_risk_metrics(fund_code))
-
-
-@fund_bp.route("/api/news/<fund_code>")
-def get_fund_news(fund_code: str):
-    """获取基金相关公告和新闻"""
-    valid, error = _validate_fund_code(fund_code)
-    if not valid:
-        return jsonify({"success": False, "error": error})
-
-    try:
-        news_list = [
-            {"date": datetime.now().strftime("%Y-%m-%d"), "type": "分红", "title": f"关于{fund_code}基金分红公告", "content": "本基金决定进行年度分红，具体方案请查看公告。"},
-            {"date": (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d"), "type": "净值", "title": f"{fund_code}基金净值波动提示", "content": "近期基金净值波动较大，请投资者注意风险。"},
-            {"date": (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d"), "type": "持仓", "title": f"{fund_code}基金季报披露", "content": "基金经理发布了季度报告，详解投资策略调整。"},
-            {"date": (datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d"), "type": "经理", "title": f"{fund_code}基金经理变更公告", "content": "基金经理发生变更，新任基金经理具有丰富经验。"},
-            {"date": (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%d"), "type": "费率", "title": f"{fund_code}基金费率调整通知", "content": "管理费率进行调整，敬请投资者关注。"},
-        ]
-
-        return jsonify({"success": True, "data": news_list})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-@fund_bp.route("/api/similar/<fund_code>")
-def get_similar_funds(fund_code: str):
-    """获取同类型相似基金"""
-    valid, error = _validate_fund_code(fund_code)
-    if not valid:
-        return jsonify({"success": False, "error": error})
-
-    try:
-        similar_funds = [
-            {"fund_code": "005827", "fund_name": "易方达蓝筹精选混合", "similarity": 0.92},
-            {"fund_code": "001714", "fund_name": "工银文体产业股票", "similarity": 0.88},
-            {"fund_code": "110022", "fund_name": "易方达消费行业股票", "similarity": 0.85},
-        ]
-
-        return jsonify({"success": True, "data": similar_funds})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
 
 
 @fund_bp.route("/api/full-analysis/<fund_code>")

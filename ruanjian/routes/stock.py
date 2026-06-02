@@ -3,7 +3,6 @@
 增强版：KDJ、布林带、OBV、DMI等技术指标
 """
 from flask import Blueprint, render_template, jsonify, request
-import baostock as bs
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -15,17 +14,12 @@ from utils import cache, cached
 from utils.indicators import (
     calculate_all_indicators, calculate_ma, calculate_ema, calculate_macd,
     calculate_rsi, calculate_kdj, calculate_bollinger_bands, calculate_obv,
-    calculate_dmi, calculate_atr, calculate_psy, calculate_money_flow
+    calculate_dmi, calculate_atr, calculate_psy, calculate_money_flow,
+    kline_to_json_list
 )
 from utils.shared_cache import (
     fetch_stock_records, warmup_stock_cache, invalidate_stock_cache
 )
-
-try:
-    from snownlp import SnowNLP
-    SNOWNLP_AVAILABLE = True
-except ImportError:
-    SNOWNLP_AVAILABLE = False
 
 stock_bp = Blueprint("stock", __name__)
 
@@ -47,22 +41,6 @@ def _em_secid(code: str) -> str:
     raw = code.split(".")[-1] if "." in code else code
     market = code[:2].lower() if "." in code else ("sh" if raw.startswith("6") else "sz")
     return f"1.{raw}" if market == "sh" else f"0.{raw}"
-
-
-def _em_kline_name(code: str) -> str:
-    """通过东方财富 K 线接口获取股票名称"""
-    try:
-        secid = _em_secid(code)
-        resp = _EM_SESSION.get(
-            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
-            params={"secid": secid, "fields1": "f1,f2,f3", "fields2": "f57,f58",
-                    "klt": "101", "fqt": "1", "beg": "20240101", "end": "20240102"},
-            timeout=5)
-        data = resp.json()
-        name = (data.get("data") or {}).get("name", "")
-        return name if name else code
-    except Exception:
-        return code
 
 
 @cached(ttl=300)
@@ -117,11 +95,11 @@ def fetch_kline_data(code: str, frequency: str = "d", count: int = 120) -> pd.Da
                 "name": stock_name,
             })
 
-        # 计算涨跌幅
+        # 向量化计算涨跌幅
+        closes = np.array([r["close"] for r in records])
+        pct = np.diff(closes) / closes[:-1] * 100
         for i in range(1, len(records)):
-            prev = records[i - 1]["close"]
-            cur = records[i]["close"]
-            records[i]["pctChg"] = round((cur - prev) / prev * 100, 2) if prev > 0 else 0
+            records[i]["pctChg"] = round(float(pct[i - 1]), 2) if closes[i - 1] > 0 else 0
 
         df = pd.DataFrame(records)
         df = df.tail(count).reset_index(drop=True)
@@ -130,8 +108,9 @@ def fetch_kline_data(code: str, frequency: str = "d", count: int = 120) -> pd.Da
     except Exception as e:
         print(f"[K线] {code} 获取失败: {e}")
 
-    # baostock 兜底
+    # baostock 兜底（延迟导入，避免未安装时崩溃）
     try:
+        import baostock as bs
         lg = bs.login()
         end = datetime.now().strftime("%Y-%m-%d")
         start = (datetime.now() - timedelta(days=count * 2)).strftime("%Y-%m-%d")
@@ -288,12 +267,12 @@ def predict_trend_multi_indicator(df: pd.DataFrame, future_days: int = 3) -> dic
         else:
             trend = "neutral"
 
-        # 预测价格 = 当前价 × (1 + 综合得分 × 波动率)
+        # 预测价格 = 逐日复合（从上一天预测值推演下一天）
         predictions = []
         pred_price = last_price
         for i in range(1, future_days + 1):
             daily_move = composite * volatility * (1 + i * 0.3)  # 逐日放大
-            pred_price = last_price * (1 + daily_move)
+            pred_price = pred_price * (1 + daily_move)
             predictions.append(round(pred_price, 2))
 
         return {
@@ -334,31 +313,32 @@ def analyze_sentiment(news_list: list[str]) -> dict:
         return {"score": 50, "sentiment": "neutral", "news_count": 0,
                 "method": "none"}
 
-    if SNOWNLP_AVAILABLE:
-        try:
-            scores = []
-            for news in news_list[:10]:
-                if len(news) > 5:
-                    s = SnowNLP(news)
-                    scores.append(s.sentiments)
+    # 延迟导入 SnowNLP（下载模型数据，避免拖慢启动）
+    try:
+        from snownlp import SnowNLP
+        scores = []
+        for news in news_list[:10]:
+            if len(news) > 5:
+                s = SnowNLP(news)
+                scores.append(s.sentiments)
 
-            if scores:
-                avg_score = np.mean(scores) * 100
-                if avg_score > 60:
-                    sentiment = "positive"
-                elif avg_score < 40:
-                    sentiment = "negative"
-                else:
-                    sentiment = "neutral"
+        if scores:
+            avg_score = np.mean(scores) * 100
+            if avg_score > 60:
+                sentiment = "positive"
+            elif avg_score < 40:
+                sentiment = "negative"
+            else:
+                sentiment = "neutral"
 
-                return {
-                    "score": round(avg_score, 2),
-                    "sentiment": sentiment,
-                    "news_count": len(news_list),
-                    "method": "snownlp",
-                }
-        except Exception:
-            pass  # fall through to keyword fallback
+            return {
+                "score": round(avg_score, 2),
+                "sentiment": sentiment,
+                "news_count": len(news_list),
+                "method": "snownlp",
+            }
+    except (ImportError, Exception):
+        pass  # 兜底到关键词匹配
 
     # 关键词匹配兜底
     pos_count = 0
@@ -432,57 +412,9 @@ def get_kline_data(stock_code: str):
                 "data": None
             }), 404
 
-        df = calculate_ma(df)
-        df = calculate_ema(df)
-        df = calculate_macd(df)
-        df = calculate_rsi(df)
-        df = calculate_kdj(df)
-        df = calculate_bollinger_bands(df)
-        df = calculate_obv(df)
-        df = calculate_dmi(df)
-        df = calculate_atr(df)
-        df = calculate_psy(df)
-        df = calculate_money_flow(df)
+        df = calculate_all_indicators(df)
 
-        kline_data = []
-        pd_notna = pd.notna
-        for row in df.itertuples(index=False):
-            kline_data.append({
-                "date": str(row.date),
-                "open": float(row.open) if pd_notna(row.open) else 0,
-                "high": float(row.high) if pd_notna(row.high) else 0,
-                "low": float(row.low) if pd_notna(row.low) else 0,
-                "close": float(row.close) if pd_notna(row.close) else 0,
-                "volume": float(row.volume) if pd_notna(row.volume) else 0,
-                "pctChg": float(row.pctChg) if pd_notna(row.pctChg) else 0,
-                "ma5": float(row.ma5) if pd_notna(row.ma5) else None,
-                "ma10": float(row.ma10) if pd_notna(row.ma10) else None,
-                "ma20": float(row.ma20) if pd_notna(row.ma20) else None,
-                "ma60": float(row.ma60) if pd_notna(row.ma60) else None,
-                "ema12": float(row.ema12) if pd_notna(row.ema12) else None,
-                "ema26": float(row.ema26) if pd_notna(row.ema26) else None,
-                "macd": float(row.macd) if pd_notna(row.macd) else 0,
-                "macd_signal": float(row.macd_signal) if pd_notna(row.macd_signal) else 0,
-                "macd_hist": float(row.macd_hist) if pd_notna(row.macd_hist) else 0,
-                "rsi": float(row.rsi) if pd_notna(row.rsi) else 50,
-                "kdj_k": float(row.kdj_k) if pd_notna(row.kdj_k) else 50,
-                "kdj_d": float(row.kdj_d) if pd_notna(row.kdj_d) else 50,
-                "kdj_j": float(row.kdj_j) if pd_notna(row.kdj_j) else 50,
-                "bb_upper": float(row.bb_upper) if pd_notna(row.bb_upper) else None,
-                "bb_middle": float(row.bb_middle) if pd_notna(row.bb_middle) else None,
-                "bb_lower": float(row.bb_lower) if pd_notna(row.bb_lower) else None,
-                "bb_width": float(row.bb_width) if pd_notna(row.bb_width) else None,
-                "obv": float(row.obv) if pd_notna(row.obv) else 0,
-                "obv_ma": float(row.obv_ma) if pd_notna(row.obv_ma) else None,
-                "dmi_plus": float(row.dmi_plus) if pd_notna(row.dmi_plus) else 0,
-                "dmi_minus": float(row.dmi_minus) if pd_notna(row.dmi_minus) else 0,
-                "adx": float(row.adx) if pd_notna(row.adx) else 0,
-                "atr": float(row.atr) if pd_notna(row.atr) else 0,
-                "psy": float(row.psy) if pd_notna(row.psy) else 50,
-                "money_inflow": float(row.money_inflow) if pd_notna(row.money_inflow) else 0,
-                "money_outflow": float(row.money_outflow) if pd_notna(row.money_outflow) else 0,
-                "net_money_flow": float(row.net_money_flow) if pd_notna(row.net_money_flow) else 0,
-            })
+        kline_data = kline_to_json_list(df)
 
         return jsonify({
             "success": True,
@@ -703,7 +635,7 @@ def compare_stocks():
 
                 results.append({
                     "code": code,
-                    "name": latest.get("code", code),
+                    "name": latest.get("name", code),
                     "close": float(latest["close"]),
                     "change": float(latest["close"]) - float(prev["close"]),
                     "change_percent": float(latest["pctChg"]) if pd.notna(latest["pctChg"]) else 0,

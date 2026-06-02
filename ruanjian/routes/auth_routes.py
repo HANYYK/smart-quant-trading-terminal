@@ -201,26 +201,26 @@ def edit_profile():
 # ============ 内部函数 ============
 
 def _check_ip_lockout(client_ip: str) -> tuple[bool, int]:
-    """检查IP是否被锁定"""
+    """检查IP是否被锁定（使用 SQL 聚合代替全量加载）"""
     from datetime import timedelta
+    from sqlalchemy import func
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOCKOUT_MINUTES)
 
-    recent_attempts = LoginAttempt.query.filter(
+    failed_count = db.session.query(func.count(LoginAttempt.id)).filter(
         LoginAttempt.ip_address == client_ip,
-        LoginAttempt.attempted_at > cutoff
-    ).all()
-
-    failed_count = sum(1 for a in recent_attempts if not a.success)
+        LoginAttempt.attempted_at > cutoff,
+        LoginAttempt.success == False
+    ).scalar() or 0
 
     if failed_count >= MAX_LOGIN_ATTEMPTS:
-        oldest_failed = None
-        for a in recent_attempts:
-            if not a.success:
-                if oldest_failed is None or a.attempted_at < oldest_failed.attempted_at:
-                    oldest_failed = a
+        oldest = LoginAttempt.query.filter(
+            LoginAttempt.ip_address == client_ip,
+            LoginAttempt.attempted_at > cutoff,
+            LoginAttempt.success == False
+        ).order_by(LoginAttempt.attempted_at.asc()).first()
 
-        if oldest_failed:
-            lockout_end = oldest_failed.attempted_at + timedelta(minutes=LOCKOUT_MINUTES)
+        if oldest:
+            lockout_end = oldest.attempted_at + timedelta(minutes=LOCKOUT_MINUTES)
             remaining = int((lockout_end - datetime.now(timezone.utc)).total_seconds())
             if remaining > 0:
                 return True, remaining
@@ -229,11 +229,12 @@ def _check_ip_lockout(client_ip: str) -> tuple[bool, int]:
 
 
 def _get_attempt_count(client_ip: str) -> int:
-    """获取失败尝试次数"""
+    """获取失败尝试次数（SQL 计数）"""
     from datetime import timedelta
+    from sqlalchemy import func
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOCKOUT_MINUTES)
 
-    return LoginAttempt.query.filter(
+    return db.session.query(func.count(LoginAttempt.id)).filter(
         LoginAttempt.ip_address == client_ip,
         LoginAttempt.attempted_at > cutoff,
         LoginAttempt.success == False

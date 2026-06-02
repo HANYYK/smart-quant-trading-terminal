@@ -2,19 +2,23 @@
 安全工具模块 - 输入验证和sanitization
 """
 import re
-import html
 from typing import Optional, Tuple
 
 
 def sanitize_string(value: str, max_length: int = 255) -> str:
-    """清理字符串，移除潜在的危险字符"""
+    """清理字符串（去除控制字符 + 截断）。
+
+    注意：不再做 HTML 转义 — Jinja2 模板已在渲染时自动转义。
+    提前 html.escape 会导致数据库存储双重转义的数据（&amp; → &amp;amp;）。
+    """
     if not value:
         return ""
-    # HTML转义
-    value = html.escape(value)
+    value = str(value)
     # 移除控制字符
     value = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", value)
-    return value[:max_length]
+    # 合并多余的空白符号
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()[:max_length]
 
 
 def validate_stock_code(code: str) -> Tuple[bool, Optional[str]]:
@@ -78,7 +82,11 @@ def validate_page_params(page: int, page_size: int,
 
 
 def validate_search_keyword(keyword: str, max_length: int = 100) -> Tuple[bool, Optional[str], str]:
-    """验证搜索关键词"""
+    """验证搜索关键词（仅长度校验）
+
+    SQL 注入防护由 SQLAlchemy 的参数化查询提供，无需在此做关键词过滤。
+    原来的 regex 关键词屏蔽会误伤合法搜索词（如 "SELECT *"）。
+    """
     if not keyword:
         return True, None, ""
 
@@ -86,17 +94,6 @@ def validate_search_keyword(keyword: str, max_length: int = 100) -> Tuple[bool, 
 
     if len(keyword) > max_length:
         return False, f"关键词不能超过 {max_length} 个字符", keyword[:max_length]
-
-    # 移除可能的SQL注入尝试
-    dangerous_patterns = [
-        r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION)\b)",
-        r"(--|#|/\*|\*/)",
-        r"(\bOR\b.*=.*\bOR\b)",
-    ]
-
-    for pattern in dangerous_patterns:
-        if re.search(pattern, keyword, re.IGNORECASE):
-            return False, "搜索关键词包含无效字符", sanitize_string(keyword, 50)
 
     return True, None, keyword
 

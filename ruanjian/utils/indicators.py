@@ -23,7 +23,7 @@ def calculate_all_indicators(df: pd.DataFrame, indicators: Optional[list[str]] =
     
     # 默认计算所有指标
     if indicators is None:
-        indicators = ['ma', 'ema', 'macd', 'rsi', 'kdj', 'bollinger', 'obv', 'dmi', 'atr', 'psy']
+        indicators = ['ma', 'ema', 'macd', 'rsi', 'kdj', 'bollinger', 'obv', 'dmi', 'atr', 'psy', 'money_flow']
     
     # 一次性计算移动平均线
     if 'ma' in indicators:
@@ -64,7 +64,11 @@ def calculate_all_indicators(df: pd.DataFrame, indicators: Optional[list[str]] =
     # 计算PSY
     if 'psy' in indicators:
         df = calculate_psy(df)
-    
+
+    # 计算资金流向
+    if 'money_flow' in indicators:
+        df = calculate_money_flow(df)
+
     return df
 
 
@@ -83,14 +87,15 @@ def calculate_ema(df: pd.DataFrame, periods: list[int] = [12, 26]) -> pd.DataFra
 
 
 def calculate_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
-    """计算MACD指标"""
-    # 如果EMA12和EMA26尚未计算，先计算
-    if 'ema_fast' not in df.columns:
-        df["ema_fast"] = df["close"].ewm(span=fast, adjust=False, min_periods=1).mean()
-    if 'ema_slow' not in df.columns:
-        df["ema_slow"] = df["close"].ewm(span=slow, adjust=False, min_periods=1).mean()
-    
-    df["macd"] = df["ema_fast"] - df["ema_slow"]
+    """计算MACD指标（优先复用 calculate_ema 已计算的列）"""
+    ema_fast_col = f"ema{fast}"   # ema12
+    ema_slow_col = f"ema{slow}"   # ema26
+    if ema_fast_col not in df.columns:
+        df[ema_fast_col] = df["close"].ewm(span=fast, adjust=False, min_periods=1).mean()
+    if ema_slow_col not in df.columns:
+        df[ema_slow_col] = df["close"].ewm(span=slow, adjust=False, min_periods=1).mean()
+
+    df["macd"] = df[ema_fast_col] - df[ema_slow_col]
     df["macd_signal"] = df["macd"].ewm(span=signal, adjust=False, min_periods=1).mean()
     df["macd_hist"] = df["macd"] - df["macd_signal"]
     return df
@@ -154,29 +159,33 @@ def calculate_obv(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _calculate_true_range(df: pd.DataFrame) -> pd.Series:
+    """计算 True Range（供 DMI 和 ATR 共用，避免重复计算）"""
+    tr1 = df["high"] - df["low"]
+    tr2 = abs(df["high"] - df["close"].shift())
+    tr3 = abs(df["low"] - df["close"].shift())
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+
 def calculate_dmi(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     """计算DMI趋向指标"""
     if 'adx' not in df.columns:
         high_diff = df["high"].diff().fillna(0)
         low_diff = (-df["low"].diff()).fillna(0)
-        
+
         pos_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
         neg_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
-        
-        tr1 = df["high"] - df["low"]
-        tr2 = abs(df["high"] - df["close"].shift())
-        tr3 = abs(df["low"] - df["close"].shift())
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        
+
+        tr = _calculate_true_range(df)
         atr = tr.rolling(window=period, min_periods=1).mean()
         atr_safe = atr.replace(0, 1)
-        
+
         pos_di = 100 * (pos_dm.rolling(window=period, min_periods=1).mean() / atr_safe)
         neg_di = 100 * (neg_dm.rolling(window=period, min_periods=1).mean() / atr_safe)
-        
+
         dx = 100 * abs(pos_di - neg_di) / (pos_di + neg_di).replace(0, 1)
         adx = dx.rolling(window=period, min_periods=1).mean()
-        
+
         df["dmi_plus"] = pos_di.fillna(0)
         df["dmi_minus"] = neg_di.fillna(0)
         df["adx"] = adx.fillna(0)
@@ -184,13 +193,9 @@ def calculate_dmi(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-    """计算ATR平均真实波幅"""
+    """计算ATR平均真实波幅（复用 _calculate_true_range）"""
     if 'atr' not in df.columns:
-        high_low = df["high"] - df["low"]
-        high_close = abs(df["high"] - df["close"].shift())
-        low_close = abs(df["low"] - df["close"].shift())
-        
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        tr = _calculate_true_range(df)
         df["atr"] = tr.rolling(window=period, min_periods=1).mean()
     return df
 
@@ -206,8 +211,8 @@ def calculate_money_flow(df: pd.DataFrame) -> pd.DataFrame:
     """计算资金流向"""
     if 'money_flow' not in df.columns:
         close_diff = df["close"].diff().fillna(0)
-        inflow = close_diff.apply(lambda x: x if x > 0 else 0) * df["volume"]
-        outflow = (-close_diff.apply(lambda x: x if x < 0 else 0)) * df["volume"]
+        inflow = close_diff.clip(lower=0) * df["volume"]
+        outflow = (-close_diff.clip(upper=0)) * df["volume"]
         
         df["money_flow"] = df["close"] * df["volume"]
         df["money_inflow"] = inflow.rolling(window=5, min_periods=1).sum()
