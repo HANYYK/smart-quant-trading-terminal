@@ -7,11 +7,8 @@ import baostock as bs
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import random
 import json
 import time
-import threading
-import hashlib
 from pathlib import Path
 
 from utils import cache, cached
@@ -33,77 +30,132 @@ except ImportError:
 stock_bp = Blueprint("stock", __name__)
 
 
-def get_baostock_connection():
-    lg = bs.login()
-    return lg
+import requests as _requests
+
+# K线频率 → 东方财富 klt 参数
+_KLT_MAP = {"d": "101", "w": "102", "m": "103"}
+
+_EM_SESSION = _requests.Session()
+_EM_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://www.eastmoney.com/",
+})
 
 
-def close_baostock_connection(lg):
-    bs.logout()
+def _em_secid(code: str) -> str:
+    """sh.600519 → 1.600519, sz.000001 → 0.000001"""
+    raw = code.split(".")[-1] if "." in code else code
+    market = code[:2].lower() if "." in code else ("sh" if raw.startswith("6") else "sz")
+    return f"1.{raw}" if market == "sh" else f"0.{raw}"
 
 
-@cached(ttl=600)
+def _em_kline_name(code: str) -> str:
+    """通过东方财富 K 线接口获取股票名称"""
+    try:
+        secid = _em_secid(code)
+        resp = _EM_SESSION.get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={"secid": secid, "fields1": "f1,f2,f3", "fields2": "f57,f58",
+                    "klt": "101", "fqt": "1", "beg": "20240101", "end": "20240102"},
+            timeout=5)
+        data = resp.json()
+        name = (data.get("data") or {}).get("name", "")
+        return name if name else code
+    except Exception:
+        return code
+
+
+@cached(ttl=300)
 def fetch_kline_data(code: str, frequency: str = "d", count: int = 120) -> pd.DataFrame:
-    """
-    获取K线数据 (带缓存)
-    frequency: 'd'=日线, 'w'=周线, 'm'=月线
-    """
-    lg = get_baostock_connection()
+    """获取K线数据 —— 东方财富 API（覆盖全部A股）"""
+    if frequency not in _KLT_MAP:
+        frequency = "d"
+    klt = _KLT_MAP[frequency]
 
     try:
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=count * 2)).strftime("%Y-%m-%d")
+        secid = _em_secid(code)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=count * 3)  # 多拿些，确保够
 
-        rs = bs.query_history_k_data_plus(
-            code,
-            "date,code,open,high,low,close,volume,amount,turn,pctChg",
-            start_date=start_date,
-            end_date=end_date,
-            frequency=frequency,
-            adjustflag="3"
+        resp = _EM_SESSION.get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={
+                "secid": secid,
+                "fields1": "f1,f2,f3,f4,f5,f6",
+                "fields2": "f51,f52,f53,f54,f55,f56,f57",
+                "klt": klt,
+                "fqt": "1",  # 前复权
+                "beg": start_date.strftime("%Y%m%d"),
+                "end": end_date.strftime("%Y%m%d"),
+            },
+            timeout=10,
         )
+        data = resp.json()
+        klines = (data.get("data") or {}).get("klines") or []
+        stock_name = (data.get("data") or {}).get("name", "")
 
+        if not klines:
+            print(f"[K线] {code} 东方财富无数据")
+            return pd.DataFrame()
+
+        records = []
+        for line in klines:
+            parts = str(line).split(",")
+            if len(parts) < 7:
+                continue
+            records.append({
+                "date": parts[0],
+                "code": code,
+                "open": float(parts[1]),
+                "close": float(parts[2]),
+                "high": float(parts[3]),
+                "low": float(parts[4]),
+                "volume": float(parts[5]),
+                "amount": float(parts[6]),
+                "pctChg": 0,
+                "turn": 0,
+                "name": stock_name,
+            })
+
+        # 计算涨跌幅
+        for i in range(1, len(records)):
+            prev = records[i - 1]["close"]
+            cur = records[i]["close"]
+            records[i]["pctChg"] = round((cur - prev) / prev * 100, 2) if prev > 0 else 0
+
+        df = pd.DataFrame(records)
+        df = df.tail(count).reset_index(drop=True)
+        return df
+
+    except Exception as e:
+        print(f"[K线] {code} 获取失败: {e}")
+
+    # baostock 兜底
+    try:
+        lg = bs.login()
+        end = datetime.now().strftime("%Y-%m-%d")
+        start = (datetime.now() - timedelta(days=count * 2)).strftime("%Y-%m-%d")
+        rs = bs.query_history_k_data_plus(
+            code, "date,code,open,high,low,close,volume,amount,turn,pctChg",
+            start_date=start, end_date=end, frequency=frequency, adjustflag="3")
         data = []
         while rs.error_code == "0" and rs.next():
             data.append(rs.get_row_data())
+        bs.logout()
+        if data:
+            df = pd.DataFrame(data, columns=["date", "code", "open", "high", "low",
+                                              "close", "volume", "amount", "turn", "pctChg"])
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            return df.tail(count).reset_index(drop=True)
+    except Exception:
+        pass
 
-        if not data:
-            print(f"[K线] {code} 无数据，尝试备用数据")
-            return _get_fallback_kline_data(code, count=count)
-
-        df = pd.DataFrame(data, columns=[
-            "date", "code", "open", "high", "low", "close",
-            "volume", "amount", "turn", "pctChg"
-        ])
-
-        df["open"] = pd.to_numeric(df["open"], errors="coerce")
-        df["high"] = pd.to_numeric(df["high"], errors="coerce")
-        df["low"] = pd.to_numeric(df["low"], errors="coerce")
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
-        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
-        df["pctChg"] = pd.to_numeric(df["pctChg"], errors="coerce")
-
-        if df.empty or len(df) < count // 2:
-            print(f"[K线] {code} 数据不足，补充备用数据")
-            fallback = _get_fallback_kline_data(code, count=count)
-            df = pd.concat([df, fallback], ignore_index=True).tail(count)
-
-        return df.tail(count).reset_index(drop=True)
-
-    except Exception as e:
-        print(f"[K线] {code} 获取失败: {e}，使用备用数据")
-        return _get_fallback_kline_data(code, count=count)
-
-    finally:
-        close_baostock_connection(lg)
+    return pd.DataFrame()
 
 
 def predict_trend_multi_indicator(df: pd.DataFrame, future_days: int = 3) -> dict:
-    """
-    多指标综合趋势预测
-    基于 EMA/MACD/RSI/布林带/KDJ/ATR 六项指标加权评分，
-    不使用任何外部模型，零额外依赖。
-    """
+    """多指标综合趋势预测 —— EMA/MACD/RSI/布林带/KDJ 加权评分"""
     if len(df) < 30:
         return {
             "predictions": [], "confidence": 0, "trend": "neutral",
@@ -261,77 +313,6 @@ def predict_trend_multi_indicator(df: pd.DataFrame, future_days: int = 3) -> dic
         }
 
 
-def _eastmoney_stock_secid(code: str) -> str:
-    """股票代码转东方财富 secid，sh.600519 → 1.600519"""
-    raw = code.split(".")[-1] if "." in code else code
-    return f"1.{raw}" if code.startswith("sh") or (not code.startswith("sz") and raw.startswith("6")) else f"0.{raw}"
-
-
-def _get_fallback_kline_data(code: str, count: int = 120) -> pd.DataFrame:
-    """东方财富 K 线数据 —— baostock 不可用时的可靠后备（覆盖全部 A 股）"""
-    import requests
-    try:
-        secid = _eastmoney_stock_secid(code)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=count * 2)
-        url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-        params = {
-            "secid": secid,
-            "fields1": "f1,f2,f3,f4,f5,f6",
-            "fields2": "f51,f52,f53,f54,f55,f56,f57",
-            "klt": "101",
-            "fqt": "1",
-            "beg": start_date.strftime("%Y%m%d"),
-            "end": end_date.strftime("%Y%m%d"),
-        }
-        resp = requests.get(url, params=params,
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.eastmoney.com/"},
-            timeout=10)
-        data = resp.json()
-        klines = (data.get("data") or {}).get("klines") or []
-        if klines:
-            records = []
-            for line in klines:
-                parts = str(line).split(",")
-                if len(parts) < 7:
-                    continue
-                records.append({
-                    "date": parts[0],
-                    "code": code,
-                    "open": float(parts[1]),
-                    "close": float(parts[2]),
-                    "high": float(parts[3]),
-                    "low": float(parts[4]),
-                    "volume": float(parts[5]),
-                    "amount": float(parts[6]),
-                    "pctChg": 0,
-                    "turn": 0,
-                })
-            if records:
-                # 补算涨跌幅
-                for i in range(1, len(records)):
-                    prev = records[i - 1]["close"]
-                    cur = records[i]["close"]
-                    records[i]["pctChg"] = round((cur - prev) / prev * 100, 2) if prev > 0 else 0
-                df = pd.DataFrame(records)
-                df = df.tail(count).reset_index(drop=True)
-                return df
-    except Exception as e:
-        print(f"[K线] 东方财富备用也失败: {e}")
-
-    # 最终保底：随机数据（保证页面不崩）
-    base_price = 10.0
-    dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(count, 0, -1)]
-    recs = []
-    price = base_price
-    for d in dates:
-        chg = random.uniform(-3, 3)
-        price *= (1 + chg / 100)
-        recs.append({"date": d, "code": code, "open": round(price, 2), "close": round(price, 2),
-                      "high": round(price * 1.02, 2), "low": round(price * 0.98, 2),
-                      "volume": random.randint(5000000, 50000000), "amount": 0,
-                      "pctChg": round(chg, 2), "turn": 0})
-    return pd.DataFrame(recs)
 
 
 # 中文金融情感关键词
@@ -522,64 +503,44 @@ def get_kline_data(stock_code: str):
 
 @stock_bp.route("/api/info/<stock_code>")
 def get_stock_info(stock_code: str):
-    """获取股票基本信息"""
+    """获取股票基本信息（东方财富 API）"""
     try:
-        lg = get_baostock_connection()
+        secid = _em_secid(stock_code)
+        resp = _EM_SESSION.get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={
+                "secid": secid,
+                "fields1": "f1,f2,f3,f4,f5,f6",
+                "fields2": "f51,f52,f53,f54,f55",
+                "klt": "101",
+                "fqt": "1",
+                "beg": (datetime.now() - timedelta(days=3)).strftime("%Y%m%d"),
+                "end": datetime.now().strftime("%Y%m%d"),
+            },
+            timeout=10,
+        )
+        data = resp.json()
+        node = data.get("data") or {}
+        name = node.get("name", "未知")
+        klines = node.get("klines") or []
 
-        try:
-            rs = bs.query_stock_basic(code=stock_code)
+        close_price = 0
+        if klines:
+            last_kline = str(klines[-1]).split(",")
+            if len(last_kline) >= 3:
+                close_price = float(last_kline[2])
 
-            info = {
-                "code": stock_code,
-                "name": "未知",
-                "ipoDate": "",
-                "outDate": "",
-                "type": "",
-                "status": "正常"
-            }
-            while rs.error_code == "0" and rs.next():
-                data = rs.get_row_data()
-                if data:
-                    info = {
-                        "code": data[0],
-                        "name": data[1],
-                        "ipoDate": data[2],
-                        "outDate": data[3],
-                        "type": data[4],
-                        "status": data[5] if len(data) > 5 else "正常"
-                    }
-                    break
-
-            close_price = 0.0
-            rs2 = bs.query_history_k_data_plus(
-                stock_code,
-                "close,pctChg,pe,pb",
-                start_date=(datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d"),
-                end_date=datetime.now().strftime("%Y-%m-%d"),
-                frequency="d",
-                adjustflag="3"
-            )
-
-            prices = []
-            while rs2.error_code == "0" and rs2.next():
-                prices.append(rs2.get_row_data())
-
-            if prices:
-                last = prices[-1]
-                close_price = float(last[0]) if last[0] else 0
-
-            info["close"] = close_price
-            info["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            return jsonify({"success": True, "data": info})
-
-        finally:
-            close_baostock_connection(lg)
+        return jsonify({"success": True, "data": {
+            "code": stock_code,
+            "name": name,
+            "close": close_price,
+            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }})
 
     except Exception as e:
         import logging
         logging.exception("股票信息API错误")
-        return jsonify({"success": False, "error": "服务器内部错误，请稍后重试"}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @stock_bp.route("/api/ai/predict/<stock_code>")
@@ -617,12 +578,10 @@ def get_ai_prediction(stock_code: str):
 _NEWS_CACHE_DIR = Path("cache/news")
 _NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _NEWS_CACHE_TTL = 600  # 10 分钟
-_news_cache_lock = threading.Lock()
 
 
 def _fetch_real_news(stock_code: str) -> list[str]:
-    """从东方财富获取真实个股新闻标题"""
-    # 提取纯数字代码，如 sh.600519 → 600519
+    """从 akshare 获取真实个股新闻标题（东方财富数据源）"""
     raw_code = stock_code.split(".")[-1] if "." in stock_code else stock_code
 
     # 读缓存
@@ -642,18 +601,9 @@ def _fetch_real_news(stock_code: str) -> list[str]:
         if df is not None and not df.empty:
             titles = df["title"].dropna().head(20).tolist()
     except Exception:
-        pass  # 失败走降级
+        pass  # API 失败返回空列表，不造假数据
 
-    if not titles:
-        # 降级：用 mock 新闻池
-        h = int(hashlib.md5(stock_code.encode()).hexdigest()[:8], 16)
-        rng = random.Random(h)
-        pool = list(_MOCK_NEWS_POOL)
-        rng.shuffle(pool)
-        code_short = raw_code
-        titles = [tpl[0].replace("{code}", code_short) for tpl in pool[:7]]
-
-    # 写缓存
+    # 写缓存（空列表也缓存，避免频繁重试失败的 API）
     try:
         cache_file.write_text(
             json.dumps({"titles": titles, "ts": time.time()}, ensure_ascii=False),
@@ -665,35 +615,19 @@ def _fetch_real_news(stock_code: str) -> list[str]:
     return titles
 
 
-# 备用新闻池 —— akshare 失败时的降级方案
-_MOCK_NEWS_POOL = [
-    ("{code}发布季度财报，营收同比增长15%", "positive"),
-    ("机构上调{code}目标价，维持买入评级", "positive"),
-    ("{code}新产品获得市场认可，销量超预期", "positive"),
-    ("多家机构看好{code}长期发展前景", "positive"),
-    ("{code}宣布战略合作计划，拓展新业务线", "positive"),
-    ("{code}获政策支持，行业景气度持续回暖", "positive"),
-    ("{code}业绩超预期，净利润同比增长30%", "positive"),
-    ("{code}技术突破，推出新一代产品", "positive"),
-    ("{code}季度财报不及预期，净利润下滑", "negative"),
-    ("行业竞争加剧，{code}市场份额面临挑战", "negative"),
-    ("{code}遭遇大股东减持，市场信心受挫", "negative"),
-    ("监管新规出台，{code}业务模式或受影响", "negative"),
-    ("{code}估值偏高，分析师下调评级至中性", "negative"),
-    ("{code}召开股东大会，审议年度报告", "neutral"),
-    ("{code}发布公告，回应投资者关切事项", "neutral"),
-    ("{code}维持现有业务格局，静待政策催化", "neutral"),
-    ("{code}参与行业论坛，探讨数字化转型方向", "neutral"),
-]
-
-
 @stock_bp.route("/api/ai/sentiment/<stock_code>")
 def get_sentiment_analysis(stock_code: str):
     """获取情绪分析 —— 真实新闻 + 关键词情感打分"""
     try:
         news_titles = _fetch_real_news(stock_code)
+        if not news_titles:
+            return jsonify({
+                "success": False,
+                "error": "暂无该股票相关新闻",
+                "data": {"score": 50, "sentiment": "neutral", "news_count": 0, "news_titles": []}
+            })
         sentiment = analyze_sentiment(news_titles)
-        sentiment["news_titles"] = news_titles[:5]  # 返回前 5 条标题给前端展示
+        sentiment["news_titles"] = news_titles[:5]
         return jsonify({"success": True, "data": sentiment})
     except Exception as e:
         import logging
@@ -703,29 +637,41 @@ def get_sentiment_analysis(stock_code: str):
 
 @stock_bp.route("/api/realtime/<stock_code>")
 def get_realtime_quote(stock_code: str):
-    """获取实时行情"""
+    """获取实时行情（东方财富 push2 API）"""
     try:
-        # 使用K线数据的最后一条作为实时行情（baostock无实时API）
-        df = fetch_kline_data(stock_code, count=1)
-        if not df.empty:
-            data = {
-                "code": stock_code,
-                "name": "未知",
-                "open": float(df.iloc[0]["open"]),
-                "high": float(df.iloc[0]["high"]),
-                "low": float(df.iloc[0]["low"]),
-                "close": float(df.iloc[0]["close"]),
-                "volume": float(df.iloc[0]["volume"]),
-                "timestamp": df.iloc[0]["date"]
-            }
-            return jsonify({"success": True, "data": data})
+        secid = _em_secid(stock_code)
+        resp = _EM_SESSION.get(
+            "https://push2.eastmoney.com/api/qt/stock/get",
+            params={
+                "secid": secid,
+                "fields": "f43,f44,f45,f46,f47,f48,f50,f51,f52,f55,f57,f58,f116,f117,f170",
+                "ut": "fa5fd1943c7b386f172d6893dbbf2bf1",
+            },
+            timeout=8,
+        )
+        d = (resp.json().get("data") or {})
+        if not d:
+            return jsonify({"success": False, "error": "无行情数据"}), 404
 
-        return jsonify({"success": False, "error": "无法获取行情数据"}), 404
+        return jsonify({"success": True, "data": {
+            "code": stock_code,
+            "name": d.get("f58", "未知"),
+            "price": d.get("f43", 0) / 100 if d.get("f43") else 0,
+            "open": d.get("f46", 0) / 100 if d.get("f46") else 0,
+            "high": d.get("f44", 0) / 100 if d.get("f44") else 0,
+            "low": d.get("f45", 0) / 100 if d.get("f45") else 0,
+            "volume": d.get("f47", 0),
+            "amount": d.get("f48", 0),
+            "change_pct": d.get("f170", 0) / 100 if d.get("f170") else 0,
+            "change_amount": d.get("f169", 0) / 100 if d.get("f169") else 0,
+            "pe": d.get("f116", 0) / 100 if d.get("f116") else 0,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }})
 
     except Exception as e:
         import logging
         logging.exception("实时行情API错误")
-        return jsonify({"success": False, "error": "服务器内部错误，请稍后重试"}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @stock_bp.route("/compare")
