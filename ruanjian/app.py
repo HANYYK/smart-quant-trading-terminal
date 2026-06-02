@@ -435,10 +435,12 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     DEBUG = False
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
-    SESSION_COOKIE_SECURE = True
-    REMEMBER_COOKIE_SECURE = True
-    # 生产环境强制 HTTPS
-    PREFERRED_URL_SCHEME = "https"
+    # HTTPS 安全策略 —— 仅当配置了 HTTPS 代理（如 Nginx）时启用
+    # 若直连HTTP（如 http://IP），需在 .env 中设置 ENABLE_HTTPS=false
+    _enable_https = os.environ.get("ENABLE_HTTPS", "true").lower() == "true"
+    SESSION_COOKIE_SECURE = _enable_https
+    REMEMBER_COOKIE_SECURE = _enable_https
+    PREFERRED_URL_SCHEME = "https" if _enable_https else "http"
 
 
 class TestingConfig(Config):

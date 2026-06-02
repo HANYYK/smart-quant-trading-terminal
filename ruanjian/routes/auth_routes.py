@@ -238,7 +238,7 @@ def _get_attempt_count(client_ip: str) -> int:
         LoginAttempt.ip_address == client_ip,
         LoginAttempt.attempted_at > cutoff,
         LoginAttempt.success == False
-    ).count()
+    ).scalar() or 0
 
 
 def _record_login_attempt(ip_address: str, username: str, success: bool) -> None:
